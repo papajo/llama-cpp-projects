@@ -1,0 +1,14 @@
+[project]
+name = "enterprise-gateway"
+version = "0.1.0"
+description = "Enterprise MCP gateway with auth, rate-limiting, audit, and request validation"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

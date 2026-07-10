@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=75.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "sleep-wake-cost-profiler"
+version = "0.1.0"
+description = "GPU sleep/wake transition cost profiler for inference servers"
+requires-python = ">=3.10"
+dependencies = []
+optional-dependencies = { test = ["pytest>=8"] }
+
+[tool.setuptools.packages.find]
+where = ["."]

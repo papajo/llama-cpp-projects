@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Inference Profiling Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --accent: #38bdf8;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 0.85rem; margin-bottom: 20px; }
+
+  .controls {
+    display: flex; gap: 12px; align-items: center; margin-bottom: 20px; flex-wrap: wrap;
+  }
+  .controls label { font-size: 0.85rem; color: var(--muted); }
+  .controls select {
+    background: var(--card); color: var(--text); border: 1px solid #334155;
+    padding: 6px 12px; border-radius: 6px; font-size: 0.85rem;
+  }
+  .controls button {
+    background: var(--accent); color: #0f172a; border: none;
+    padding: 6px 16px; border-radius: 6px; font-weight: 600; cursor: pointer;
+    font-size: 0.85rem;
+  }
+  .controls button:hover { opacity: 0.85; }
+
+  .summary-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px; margin-bottom: 24px;
+  }
+  .summary-card {
+    background: var(--card); border-radius: 10px; padding: 16px;
+    border: 1px solid #334155;
+  }
+  .summary-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; }
+  .summary-card .value { font-size: 1.3rem; font-weight: 700; margin-top: 4px; }
+  .summary-card .value.green { color: var(--green); }
+  .summary-card .value.red { color: var(--red); }
+  .summary-card .value.yellow { color: var(--yellow); }
+  .summary-card .value.accent { color: var(--accent); }
+
+  .chart-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+    gap: 16px;
+  }
+  .chart-card {
+    background: var(--card); border-radius: 10px; padding: 16px;
+    border: 1px solid #334155;
+  }
+  .chart-card h3 { font-size: 0.85rem; color: var(--muted); margin-bottom: 8px; }
+  canvas { max-height: 250px; }
+
+  @media (max-width: 1100px) {
+    .chart-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<h1>⚡ Inference Profiling Dashboard</h1>
+<p class="subtitle">Real-time llama.cpp performance metrics</p>
+
+<div class="controls">
+  <label for="runSelect">Run:</label>
+  <select id="runSelect"></select>
+  <span style="color:var(--muted);font-size:0.85rem" id="dataStatus">—</span>
+  <button onclick="refreshData()">↻ Refresh</button>
+</div>
+
+<div class="summary-grid" id="summaryGrid">
+  <div class="summary-card"><div class="label">Throughput</div><div class="value accent" id="s-throughput">—</div></div>
+  <div class="summary-card"><div class="label">P50 Latency</div><div class="value green" id="s-p50">—</div></div>
+  <div class="summary-card"><div class="label">P95 Latency</div><div class="value yellow" id="s-p95">—</div></div>
+  <div class="summary-card"><div class="label">P99 Latency</div><div class="value red" id="s-p99">—</div></div>
+  <div class="summary-card"><div class="label">CPU</div><div class="value" id="s-cpu" style="color:var(--accent)">—</div></div>
+  <div class="summary-card"><div class="label">Memory</div><div class="value" id="s-mem" style="color:var(--yellow)">—</div></div>
+  <div class="summary-card"><div class="label">GPU Util</div><div class="value green" id="s-gpu">—</div></div>
+  <div class="summary-card"><div class="label">KV Cache</div><div class="value" id="s-kv" style="color:var(--accent)">—</div></div>
+</div>
+
+<div class="chart-grid">
+  <div class="chart-card">
+    <h3>Tokens / Second</h3>
+    <canvas id="chartThroughput"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Latency (ms)</h3>
+    <canvas id="chartLatency"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>CPU &amp; GPU Utilization (%)</h3>
+    <canvas id="chartUtil"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Memory &amp; KV Cache</h3>
+    <canvas id="chartMemory"></canvas>
+  </div>
+</div>
+
+<script>
+const COLORS = {
+  tps: '#38bdf8',
+  p50: '#4ade80',
+  p95: '#fbbf24',
+  p99: '#f87171',
+  cpu: '#38bdf8',
+  gpu: '#4ade80',
+  mem: '#fbbf24',
+  kv: '#a78bfa',
+};
+
+let dataCache = {};
+let charts = {};
+
+// ---- Chart helpers ----
+function initChart(id, config) {
+  const ctx = document.getElementById(id);
+  if (!ctx) return null;
+  if (charts[id]) { charts[id].destroy(); }
+  charts[id] = new Chart(ctx, config);
+  return charts[id];
+}
+
+function labelFromTs(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString();
+}
+
+// ---- Main render ----
+function renderRun(runName) {
+  const run = dataCache[runName];
+  if (!run) {
+    document.getElementById('dataStatus').textContent = 'No data';
+    return;
+  }
+  document.getElementById('dataStatus').textContent =
+    `${run.snapshots.length} datapoints · avg ${run.avg_throughput.toFixed(1)} t/s`;
+
+  const snaps = run.snapshots;
+  const labels = snaps.map(s => labelFromTs(s.timestamp));
+  const last = snaps[snaps.length - 1];
+
+  // Summary cards
+  document.getElementById('s-throughput').textContent = last.tokens_per_second.toFixed(1) + ' t/s';
+  document.getElementById('s-p50').textContent = last.latency_p50_ms.toFixed(1) + ' ms';
+  document.getElementById('s-p95').textContent = last.latency_p95_ms.toFixed(1) + ' ms';
+  document.getElementById('s-p99').textContent = last.latency_p99_ms.toFixed(1) + ' ms';
+  document.getElementById('s-cpu').textContent = last.cpu_percent.toFixed(1) + '%';
+  document.getElementById('s-mem').textContent = last.memory_mb.toFixed(0) + ' MB';
+  document.getElementById('s-gpu').textContent = last.gpu_util_percent.toFixed(1) + '%';
+  document.getElementById('s-kv').textContent = last.kv_cache_usage_percent.toFixed(1) + '%';
+
+  // Throughput chart
+  initChart('chartThroughput', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Tokens/s',
+        data: snaps.map(s => s.tokens_per_second),
+        borderColor: COLORS.tps,
+        backgroundColor: COLORS.tps + '20',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+      }, {
+        label: 'Prompt Processing (t/s)',
+        data: snaps.map(s => s.prompt_processing_speed),
+        borderColor: '#a78bfa',
+        backgroundColor: '#a78bfa20',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 2,
+      }]
+    },
+    options: chartOpts(),
+  });
+
+  // Latency chart
+  initChart('chartLatency', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'P50', data: snaps.map(s => s.latency_p50_ms), borderColor: COLORS.p50, tension: 0.3, pointRadius: 1 },
+        { label: 'P95', data: snaps.map(s => s.latency_p95_ms), borderColor: COLORS.p95, tension: 0.3, pointRadius: 1 },
+        { label: 'P99', data: snaps.map(s => s.latency_p99_ms), borderColor: COLORS.p99, tension: 0.3, pointRadius: 1 },
+      ]
+    },
+    options: chartOpts('ms'),
+  });
+
+  // Utilization chart
+  initChart('chartUtil', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'CPU %', data: snaps.map(s => s.cpu_percent), borderColor: COLORS.cpu, tension: 0.3, pointRadius: 1 },
+        { label: 'GPU %', data: snaps.map(s => s.gpu_util_percent), borderColor: COLORS.gpu, tension: 0.3, pointRadius: 1 },
+      ]
+    },
+    options: chartOpts('%'),
+  });
+
+  // Memory & KV cache chart
+  initChart('chartMemory', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Memory (MB)', data: snaps.map(s => s.memory_mb), borderColor: COLORS.mem, tension: 0.3, pointRadius: 1 },
+        { label: 'KV Cache %', data: snaps.map(s => s.kv_cache_usage_percent), borderColor: COLORS.kv, tension: 0.3, pointRadius: 1, yAxisID: 'y1' },
+      ]
+    },
+    options: chartOptsDual(),
+  });
+}
+
+function chartOpts(unit = '') {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    plugins: {
+      legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+    },
+    scales: {
+      x: {
+        ticks: { color: '#64748b', maxTicksLimit: 10, font: { size: 10 } },
+        grid: { color: '#334155' },
+      },
+      y: {
+        ticks: { color: '#64748b', font: { size: 10 } },
+        grid: { color: '#334155' },
+      },
+    },
+  };
+}
+
+function chartOptsDual() {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    plugins: {
+      legend: { labels: { color: '#94a3b8', font: { size: 11 } } },
+    },
+    scales: {
+      x: {
+        ticks: { color: '#64748b', maxTicksLimit: 10, font: { size: 10 } },
+        grid: { color: '#334155' },
+      },
+      y: {
+        type: 'linear',
+        display: true,
+        position: 'left',
+        ticks: { color: '#fbbf24', font: { size: 10 } },
+        grid: { color: '#334155' },
+      },
+      y1: {
+        type: 'linear',
+        display: true,
+        position: 'right',
+        min: 0,
+        max: 100,
+        ticks: { color: '#a78bfa', font: { size: 10 } },
+        grid: { drawOnChartArea: false },
+      },
+    },
+  };
+}
+
+// ---- Populate run selector ----
+function populateSelect(runs) {
+  const sel = document.getElementById('runSelect');
+  const current = sel.value;
+  sel.innerHTML = '';
+  for (const name of Object.keys(runs)) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  }
+  if (runs[current]) { sel.value = current; }
+  return sel.value || Object.keys(runs)[0];
+}
+
+// ---- Fetch & refresh ----
+async function fetchData() {
+  const resp = await fetch('/api/metrics');
+  if (!resp.ok) throw new Error('Failed to fetch');
+  return await resp.json();
+}
+
+async function refreshData() {
+  document.getElementById('dataStatus').textContent = 'Loading...';
+  await fetch('/api/refresh');
+  dataCache = await fetchData();
+  const runName = populateSelect(dataCache);
+  renderRun(runName);
+}
+
+document.getElementById('runSelect').addEventListener('change', (e) => {
+  renderRun(e.target.value);
+});
+
+// ---- Init ----
+(async function init() {
+  try {
+    dataCache = await fetchData();
+    const runName = populateSelect(dataCache);
+    renderRun(runName);
+  } catch (e) {
+    document.getElementById('dataStatus').textContent = 'Error loading data: ' + e.message;
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  benchmark:
+    build: .
+    image: spec-decoding-benchmark
+    container_name: spec-bench
+    runtime: nvidia  # for GPU access
+    volumes:
+      - ./models:/models:ro          # mount GGUF models here
+      - ./results:/app/results       # output directory
+      - ./prompts:/app/prompts:ro    # prompt corpora
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - MODEL_PATH=/models/target.gguf
+      - DRAFT_MODEL_PATH=/models/draft.gguf
+    command: >
+      spec-bench run /models/target.gguf
+        --draft-model /models/draft.gguf
+        --gpu-layers -1
+        --ctx-size 4096
+        --n-predict 200
+        --temperature 0.7
+        --runs 3
+        -o /app/results
+
+  # Run baseline only (no speculation)
+  baseline:
+    build: .
+    container_name: spec-bench-baseline
+    runtime: nvidia
+    volumes:
+      - ./models:/models:ro
+      - ./results:/app/results
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    command: >
+      spec-bench baseline /models/target.gguf
+        --gpu-layers -1
+        --ctx-size 4096
+        --n-predict 200
+        -o /app/results

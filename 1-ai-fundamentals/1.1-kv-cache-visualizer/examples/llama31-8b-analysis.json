@@ -1,0 +1,25 @@
+{
+  "model": "Llama-3.1-8B",
+  "analysis": {
+    "architecture": {
+      "layers": 32,
+      "q_heads": 32,
+      "kv_heads": 8,
+      "gqa_ratio": "4:1",
+      "head_dim": 128,
+      "hidden_dim": 4096,
+      "max_context": 131072
+    },
+    "findings": {
+      "kv_f16_at_full_ctx": "16.00 GB — fits on most 24 GB GPUs alongside quantized weights",
+      "kv_q8_0_at_full_ctx": "8.00 GB — comfortable on 16 GB+ GPUs",
+      "kv_q4_0_at_full_ctx": "4.00 GB — fits alongside weights even on 8 GB cards",
+      "per_layer_f16": "512 MiB per layer — 32 layers × 16 MiB each"
+    },
+    "recommendations": {
+      "24gb_gpu": "Use --cache-type-k q8_0 (saves 8 GB, minimal quality loss)",
+      "16gb_gpu": "Use --cache-type-k q4_0 and limit --ctx to 32K-64K",
+      "8gb_gpu": "Use --cache-type-k q4_0 with --ctx 8192-16384"
+    }
+  }
+}

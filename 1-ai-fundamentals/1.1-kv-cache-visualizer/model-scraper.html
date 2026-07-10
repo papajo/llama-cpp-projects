@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Model Scraper (Legacy Browser GUI)</title>
+    <style>
+        :root { --primary: #2563eb; --bg: #f8fafc; --card-bg: #ffffff; --text: #1e293b; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        header { text-align: center; margin-bottom: 2rem; }
+        h1 { color: var(--primary); margin-bottom: 0.5rem; }
+        p { color: #64748b; }
+
+        .controls { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem; }
+        .input-group { display: flex; flex-direction: column; gap: 0.5rem; min-width: 150px; }
+        label { font-weight: 600; font-size: 0.9rem; }
+        input, button { padding: 0.75rem; border: 1px solid #e2e8f0; border-radius: 8px; font-size: 1rem; }
+        input { background: var(--card-bg); }
+        button { background: var(--primary); color: white; border: none; cursor: pointer; transition: background 0.2s; font-weight: 600; }
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #94a3b8; cursor: not-allowed; }
+
+        .status-bar { text-align: center; margin-bottom: 1rem; padding: 0.5rem; border-radius: 8px; }
+        .status-error { background: #fee2e2; color: #991b1b; }
+        .status-info { background: #e0f2fe; color: #084c61; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        th, td { text-align: left; padding: 1rem; border-bottom: 1px solid #e2e8f0; }
+        th { background: #f1f5f9; font-weight: 600; color: #334155; }
+        tr:hover { background: #f8fafc; }
+        .tag-badge { display: inline-block; background: #e2e8f0; color: #475569; padding: 0.25rem 0.5rem; border-radius: 12px; font-size: 0.8rem; margin-right: 0.25rem; }
+
+        .download-btn { margin-left: 1rem; padding: 0.5rem 1rem; font-size: 0.9rem; background: #10b981; }
+        .download-btn:hover { background: #059669; }
+
+        /* Mock data simulation styling */
+        .mock-warning { margin-top: 1rem; padding: 1rem; background: #fef3c7; color: #92400e; border-radius: 8px; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+
+<div id="root"></div>
+
+<!-- React and ReactDOM via CDN -->
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+    /**
+     * LLM Model Scraper GUI
+     * React + TypeScript implementation.
+     * Handles CORS fallback using mock data.
+     */
+    
+    // --- TypeScript Definitions ---
+    interface Model {
+        name: string;
+        description: string;
+        size?: string | null;
+        tags: string[];
+        link?: string | null;
+    }
+
+    interface AppState {
+        url: string;
+        limit: number;
+        models: Model[];
+        isLoading: boolean;
+        error: string | null;
+        useMock: boolean;
+    }
+
+    // --- Mock Data Service (Fallback for CORS) ---
+    const generateMockData = (count: number): Model[] => {
+        const baseModels = [
+            { name: "llama2:7b", desc: "A compact, efficient language model.", size: "3.8GB", tags: ["Q4", "CPU"] },
+            { name: "llama2:13b", desc: "Improved accuracy for complex tasks.", size: "7.2GB", tags: ["Q8", "GPU"] },
+            { name: "mistral:7b", desc: "Fast inference and great performance.", size: "4.1GB", tags: ["Q4", "GPU"] },
+            { name: "codellama:34b", desc: "Optimized for code generation.", size: "16GB", tags: ["Q4", "Code"] },
+            { name: "vicuna:7b", desc: "Conversational model fine-tuned for dialogue.", size: "3.5GB", tags: ["Q8", "CPU"] },
+            { name: "orca-mini:3b", desc: "Small model for lightweight applications.", size: "1.2GB", tags: ["Q4", "Edge"] },
+            { name: "dolphin:2.6b", desc: "Reasoning and coding focused model.", size: "2.8GB", tags: ["Q4", "GPU"] },
+            { name: "phi:2.7b", desc: "Microsoft's lightweight AI assistant.", size: "1.5GB", tags: ["Q4", "CPU"] },
+            { name: "falcon:40b", desc: "High-performance model from Technology Innovations.", size: "24GB", tags: ["Q8", "GPU"] },
+            { name: "mpt:7b", desc: "Open-source model for diverse tasks.", size: "3.9GB", tags: ["Q4", "CPU"] },
+            { name: "starcoder:15b", desc: "Code generation powerhouse.", size: "11GB", tags: ["Q4", "Code"] },
+            { name: "bloom:176b", desc: "Multilingual model supporting 46 languages.", size: "100GB", tags: ["Q4", "GPU"] },
+            { name: "gpt4all:13b", desc: "Locally runnable GPT alternative.", size: "6GB", tags: ["Q4", "CPU"] },
+            { name: "llama2-uncensored:7b", desc: "Unofficial variant with broader scope.", size: "3.8GB", tags: ["Q4", "Adult"] },
+            { name: "llava:7b", desc: "Multimodal model (text + vision).", size: "4.5GB", tags: ["Q4", "Vision"] },
+        ];
+        
+        const shuffled = [...baseModels].sort(() => 0.5 - Math.random());
+        return shuffled.slice(0, count).map((m, i) => ({
+            ...m,
+            name: `${m.name} (Sample)`,
+            description: `${m.desc} [Mock Data]`,
+            tags: [...m.tags, "Mock"]
+        }));
+    };
+
+    // --- Component: ModelTable ---
+    const ModelTable: React.FC<{ models: Model[]; onDownload: (format: string) => void }> = ({ models, onDownload }) => {
+        if (models.length === 0) return <p>No models found.</p>;
+
+        const downloadCSV = () => {
+            const csvContent = "data:text/csv;charset=utf-8," + 
+                encodeURIComponent(
+                    ["Name", "Description", "Size", "Tags", "Link"].join(",") + "\n" +
+                    models.map(m => 
+                        `"${m.name}","${m.description}","${m.size || ""}","${m.tags.join(";")}","${m.link || ""}"`
+                    ).join("\n")
+                );
+            const encodedUri = csvContent;
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "models.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            onDownload("csv");
+        };
+
+        const downloadJSON = () => {
+            const dataStr = JSON.stringify(models, null, 2);
+            const dataUri = "data:application/json;charset=utf-8," + encodeURIComponent(dataStr);
+            const link = document.createElement("a");
+            link.setAttribute("href", dataUri);
+            link.setAttribute("download", "models.json");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            onDownload("json");
+        };
+
+        return (
+            <div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "1rem" }}>
+                    <button className="download-btn" onClick={downloadJSON}>Download JSON</button>
+                    <button className="download-btn" onClick={downloadCSV}>Download CSV</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Size / Params</th>
+                            <th>Tags</th>
+                            <th>Link</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {models.map((model, idx) => (
+                            <tr key={idx}>
+                                <td><strong>{model.name}</strong></td>
+                                <td>{model.description}</td>
+                                <td>{model.size || "N/A"}</td>
+                                <td>
+                                    {model.tags.map((tag, i) => (
+                                        <span key={i} className="tag-badge">{tag}</span>
+                                    ))}
+                                </td>
+                                <td>
+                                    {model.link ? (
+                                        <a href={model.link} target="_blank" rel="noopener noreferrer" style={{ color: "var(--primary)", textDecoration: "none" }}>
+                                            View Model
+                                        </a>
+                                    ) : "N/A"}
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            </div>
+        );
+    };
+
+    // --- Component: App ---
+    const App: React.FC = () => {
+        const [state, setState] = React.useState<AppState>({
+            url: "https://ollama.com/models",
+            limit: 10,
+            models: [],
+            isLoading: false,
+            error: null,
+            useMock: false
+        });
+
+        const handleFetch = async () => {
+            setState(prev => ({ ...prev, isLoading: true, error: null }));
+            
+            try {
+                // CORS Check: Try to fetch the actual URL
+                // Note: Direct fetch from a different origin (ollama.com) from a local file WILL fail due to CORS.
+                // This code demonstrates the *attempt* and the fallback logic required for a No-Backend tool.
+                let fetchedModels: Model[] = [];
+
+                if (!state.useMock) {
+                    // Attempt real fetch
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 5000);
+                    
+                    try {
+                        const response = await fetch(state.url, { 
+                            signal: controller.signal,
+                            headers: { "User-Agent": "ReactScraper/1.0" } 
+                        });
+                        
+                        clearTimeout(timeoutId);
+                        
+                        if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                        
+                        // Parse HTML as text since we can't run a full BS4 parser in browser
+                        const htmlText = await response.text();
+                        
+                        // Basic DOM parsing in browser (fallback to Mock if parsing fails)
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(htmlText, "text/html");
+                        
+                        // Heuristic extraction from DOM
+                        const cards = Array.from(doc.querySelectorAll('div[data-testid="model-card"], div.group, h3'));
+                        fetchedModels = cards.slice(0, state.limit).map(card => {
+                            const nameEl = card.querySelector('h3, h2, strong');
+                            const descEl = card.querySelector('p');
+                            const tagEls = Array.from(card.querySelectorAll('span, div'));
+                            
+                            return {
+                                name: nameEl?.textContent?.trim() || "Unknown",
+                                description: descEl?.textContent?.trim() || "No description",
+                                size: null,
+                                tags: tagEls.map(t => t.textContent?.trim()).filter(Boolean) as string[],
+                                link: null
+                            };
+                        });
+                        
+                        if (fetchedModels.length === 0) {
+                            throw new Error("No models found in HTML structure. Structure might have changed.");
+                        }
+                        
+                    } catch (err) {
+                        // Fallback to Mock Data on any error (CORS, Timeout, Parse Error)
+                        console.warn("Fetch failed, using mock data:", err);
+                        fetchedModels = generateMockData(state.limit);
+                        setState(prev => ({ ...prev, error: `CORS/Parse Error: ${err.message}. Using mock data for demonstration.` }));
+                    }
+                } else {
+                    fetchedModels = generateMockData(state.limit);
+                }
+
+                setState({ ...state, models: fetchedModels, isLoading: false });
+                
+            } catch (err) {
+                setState(prev => ({ ...prev, isLoading: false, error: String(err) }));
+            }
+        };
+
+        const handleDownload = (format: string) => {
+            console.log(`Downloaded ${format}`);
+        };
+
+        return (
+            <div className="container">
+                <header>
+                    <h1>LLM Model Scraper</h1>
+                    <p>Extract metadata from any model registry (e.g., Ollama)</p>
+                    <p style="font-size:0.85rem; color:#64748b;">
+                        ⚠ This browser GUI is a legacy prototype — CORS blocks real requests.
+                        Use <code>python scrape_models.py</code> from the command line instead.
+                    </p>
+                </header>
+
+                <div className="controls">
+                    <div className="input-group">
+                        <label>Target URL</label>
+                        <input 
+                            type="text" 
+                            value={state.url} 
+                            onChange={(e) => setState({ ...state, url: e.target.value })}
+                            placeholder="https://ollama.com/models"
+                        />
+                    </div>
+                    <div className="input-group">
+                        <label>Model Limit</label>
+                        <input 
+                            type="number" 
+                            value={state.limit} 
+                            onChange={(e) => setState({ ...state, limit: parseInt(e.target.value) || 10 })}
+                            min="1" 
+                            max="100"
+                        />
+                    </div>
+                    <button onClick={handleFetch} disabled={state.isLoading}>
+                        {state.isLoading ? "Fetching..." : "Fetch Models"}
+                    </button>
+                    <div className="input-group" style={{ alignSelf: "center" }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                            <input 
+                                type="checkbox" 
+                                checked={state.useMock} 
+                                onChange={(e) => setState({ ...state, useMock: e.target.checked })}
+                            />
+                            Force Mock Mode
+                        </label>
+                    </div>
+                </div>
+
+                {state.error && (
+                    <div className="status-bar status-error">{state.error}</div>
+                )}
+
+                {state.useMock && (
+                    <div className="mock-warning">
+                        <strong>Mock Mode Active:</strong> You are using sample data because either CORS is blocking the real request or you enabled Mock Mode. 
+                        To test real scraping, disable Mock Mode and ensure you run this in a browser environment that permits CORS (or use a local proxy).
+                    </div>
+                )}
+
+                <ModelTable models={state.models} onDownload={handleDownload} />
+            </div>
+        );
+    };
+
+    // --- Render ---
+    const root = document.getElementById("root");
+    if (root) {
+        ReactDOM.render(<App />, root);
+    }
+</script>
+
+</body>
+</html>

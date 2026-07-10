@@ -1,0 +1,47 @@
+{
+  "type": "object",
+  "properties": {
+    "location": {
+      "type": "object",
+      "properties": {
+        "city": { "type": "string" },
+        "country": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" }
+      },
+      "required": ["city", "country"]
+    },
+    "current": {
+      "type": "object",
+      "properties": {
+        "temperature_c": { "type": "number" },
+        "condition": {
+          "type": "string",
+          "enum": ["sunny", "cloudy", "rainy", "snowy", "windy", "foggy"]
+        },
+        "humidity_pct": { "type": "integer", "minimum": 0, "maximum": 100 },
+        "wind_kph": { "type": "number" }
+      },
+      "required": ["temperature_c", "condition"]
+    },
+    "forecast": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "day": { "type": "string" },
+          "high_c": { "type": "number" },
+          "low_c": { "type": "number" },
+          "condition": {
+            "type": "string",
+            "enum": ["sunny", "cloudy", "rainy", "snowy", "windy", "foggy"]
+          }
+        },
+        "required": ["day", "high_c", "low_c", "condition"]
+      },
+      "minItems": 1,
+      "maxItems": 7
+    }
+  },
+  "required": ["location", "current"]
+}

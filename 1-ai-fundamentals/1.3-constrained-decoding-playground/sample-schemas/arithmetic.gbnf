@@ -1,0 +1,6 @@
+# A GBNF grammar for arithmetic expressions
+root ::= expr
+expr ::= term ( ("+" | "-") term )*
+term ::= factor ( ("*" | "/") factor )*
+factor ::= number | "(" expr ")"
+number ::= "0" | [1-9] [0-9]*

@@ -1,0 +1,19 @@
+[project]
+name = "prompt-chaining-workbench"
+version = "0.1.0"
+description = "Sequential prompt chaining library for llama.cpp"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.28",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-httpx>=0.30",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = [".", "prompt_chaining"]

@@ -1,0 +1,9 @@
+[project]
+name = "prompt-optimizer-loop"
+version = "0.1.0"
+description = "Self-improving prompt optimization loop — define, run, score, and iteratively improve prompts"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]

@@ -1,0 +1,47 @@
+{
+    "legal-tone": {
+        "lora_id": 0,
+        "gguf_path": "/adapters/legal-tone.gguf",
+        "scale": 1.0,
+        "description": "Formal legal writing style — precise, authoritative, cites statutes",
+        "tags": ["legal", "formal", "precise"],
+        "keywords": ["contract", "lawsuit", "clause", "legal", "attorney", "liability", "statute", "regulation"],
+        "is_default": false
+    },
+    "concise-summarizer": {
+        "lora_id": 1,
+        "gguf_path": "/adapters/concise-summarizer.gguf",
+        "scale": 0.8,
+        "description": "Ultra-concise summarizer — terse, bullet-point output",
+        "tags": ["summarization", "concise", "fast"],
+        "keywords": ["summarize", "tl;dr", "summary", "key points", "in short", "brief"],
+        "is_default": true
+    },
+    "code-reviewer": {
+        "lora_id": 2,
+        "gguf_path": "/adapters/code-reviewer.gguf",
+        "scale": 1.0,
+        "description": "Senior engineer code review — finds bugs, suggests refactors",
+        "tags": ["code", "review", "technical"],
+        "keywords": ["code review", "bug", "refactor", "pull request", "vulnerability", "security", "performance"],
+        "is_default": false
+    },
+    "creative-writer": {
+        "lora_id": 3,
+        "gguf_path": "/adapters/creative-writer.gguf",
+        "scale": 1.2,
+        "description": "Creative writing — vivid, narrative, poetic",
+        "tags": ["creative", "writing", "story"],
+        "keywords": ["story", "poem", "haiku", "narrative", "creative", "fiction", "describe"],
+        "is_default": false
+    },
+    "teacher": {
+        "lora_id": 4,
+        "gguf_path": "/adapters/teacher.gguf",
+        "scale": 0.9,
+        "description": "Patient teacher — explains concepts step by step",
+        "tags": ["teaching", "educational", "patient"],
+        "keywords": ["explain", "teach", "learn", "what is", "how does", "tutorial", "beginner"],
+        "is_default": false
+    }
+}

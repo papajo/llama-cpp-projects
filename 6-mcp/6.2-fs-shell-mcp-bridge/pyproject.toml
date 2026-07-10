@@ -1,0 +1,14 @@
+[project]
+name = "fs-shell-bridge"
+version = "0.1.0"
+description = "MCP server exposing filesystem and shell tools with safety guards"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

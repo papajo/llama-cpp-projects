@@ -1,0 +1,1213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>llama-server · launcher</title>
+<style>
+  :root {
+    --bg: #0d0f12;
+    --surface: #161a1f;
+    --surface-2: #1e232a;
+    --border: #2a303a;
+    --text: #e1e7ee;
+    --text-dim: #8b95a5;
+    --accent: #5b8def;
+    --accent-glow: rgba(91, 141, 239, 0.15);
+    --green: #34d399;
+    --orange: #f59e0b;
+    --red: #ef4444;
+    --radius: 8px;
+    --font: 'SF Mono', 'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
+    --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 20px 32px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-family: var(--font);
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+  header h1 span { color: var(--accent); }
+  header .sub {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    margin-left: auto;
+  }
+
+  /* ── Layout ── */
+  .app { display: flex; flex: 1; overflow: hidden; }
+  .panel-left {
+    width: 440px;
+    min-width: 380px;
+    border-right: 1px solid var(--border);
+    overflow-y: auto;
+    padding: 0 0 24px;
+    flex-shrink: 0;
+  }
+  .panel-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 20px 28px;
+  }
+
+  .panel-left::-webkit-scrollbar,
+  .panel-right::-webkit-scrollbar { width: 6px; }
+  .panel-left::-webkit-scrollbar-track,
+  .panel-right::-webkit-scrollbar-track { background: transparent; }
+  .panel-left::-webkit-scrollbar-thumb,
+  .panel-right::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* ── Sections ── */
+  .section {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section:last-child { border-bottom: none; }
+  .section-title {
+    font-family: var(--font);
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* ── Form Controls ── */
+  .field { margin-bottom: 12px; }
+  .field:last-child { margin-bottom: 0; }
+  .field label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .field-row {
+    display: flex;
+    gap: 12px;
+  }
+  .field-row .field { flex: 1; margin-bottom: 0; }
+
+  input, select {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 0.85rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  input::placeholder { color: var(--text-dim); opacity: 0.5; }
+
+  /* Checkbox Toggle */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 0;
+    cursor: pointer;
+  }
+  .toggle-row:hover { opacity: 0.9; }
+  .toggle-track {
+    width: 36px;
+    height: 20px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    position: relative;
+    transition: background 0.2s, border-color 0.2s;
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+  .toggle-track.active { background: var(--accent); border-color: var(--accent); }
+  .toggle-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    background: var(--text);
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle-track.active .toggle-knob { transform: translateX(16px); background: #fff; }
+  .toggle-label {
+    font-size: 0.85rem;
+    color: var(--text);
+    user-select: none;
+  }
+  .toggle-label code {
+    font-family: var(--font);
+    font-size: 0.8rem;
+    color: var(--accent);
+    background: var(--accent-glow);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  /* ── LoRA Adapter Rows ── */
+  .lora-list { margin-bottom: 8px; }
+  .lora-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 6px;
+    transition: border-color 0.15s;
+  }
+  .lora-row.has-focus { border-color: var(--accent); }
+  .lora-row .lora-path { flex: 1; min-width: 0; }
+  .lora-row .lora-path input { font-size: 0.8rem; padding: 6px 10px; }
+  .lora-row .lora-scale {
+    width: 80px;
+    flex-shrink: 0;
+  }
+  .lora-row .lora-scale input[type="range"] {
+    width: 100%;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--surface-2);
+    border-radius: 2px;
+    outline: none;
+    cursor: pointer;
+    padding: 0;
+    border: none;
+  }
+  .lora-row .lora-scale input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  .lora-row .lora-scale-val {
+    font-family: var(--font);
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    text-align: center;
+    min-width: 32px;
+  }
+  .lora-row .lora-remove {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .lora-row .lora-remove:hover { color: var(--red); background: rgba(239,68,68,0.12); }
+
+  .btn-add {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    font-family: var(--font-ui);
+    font-weight: 500;
+    color: var(--accent);
+    background: var(--accent-glow);
+    border: 1px dashed var(--accent);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-add:hover { background: rgba(91,141,239,0.25); }
+
+  .btn-preset {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 0.75rem;
+    font-family: var(--font-ui);
+    font-weight: 500;
+    color: var(--green);
+    background: rgba(52,211,153,0.1);
+    border: 1px solid rgba(52,211,153,0.25);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-right: 6px;
+    margin-bottom: 4px;
+  }
+  .btn-preset:hover { background: rgba(52,211,153,0.2); }
+  .preset-bar { display: flex; flex-wrap: wrap; margin-bottom: 8px; }
+
+  /* Quick mode presets */
+  .mode-presets {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .mode-btn {
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    font-family: var(--font-ui);
+    font-weight: 500;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .mode-btn:hover { border-color: var(--accent); color: var(--text); }
+  .mode-btn.active {
+    background: var(--accent-glow);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ── Multimodal Model Cards ── */
+  .mm-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .mm-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .mm-card:hover { border-color: var(--accent); background: var(--surface-2); }
+  .mm-card.selected {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+  .mm-card .mm-info { flex: 1; min-width: 0; }
+  .mm-card .mm-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .mm-card .mm-desc {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-top: 1px;
+  }
+  .mm-card .mm-tags {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .mm-card .mm-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .mm-tag.image { background: rgba(91,141,239,0.2); color: #8bb4ff; }
+  .mm-tag.video { background: rgba(245,158,11,0.2); color: #fbbf24; }
+  .mm-tag.audio { background: rgba(52,211,153,0.2); color: #6ee7b7; }
+  .mm-card .mm-size {
+    font-family: var(--font);
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    margin-left: 4px;
+  }
+
+  /* ── Command Preview ── */
+  .command-preview {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .command-preview .cmd-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--border);
+    font-size: 0.78rem;
+    color: var(--text-dim);
+  }
+  .command-preview .cmd-header .cmd-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .command-preview .cmd-header button {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    font-family: var(--font-ui);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .command-preview .cmd-header button:hover {
+    border-color: var(--accent);
+    color: var(--text);
+  }
+  .command-preview .cmd-header button.copied {
+    border-color: var(--green);
+    color: var(--green);
+  }
+  .command-preview pre {
+    margin: 0;
+    padding: 16px;
+    overflow-x: auto;
+    font-family: var(--font);
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 360px;
+    overflow-y: auto;
+  }
+  .command-preview pre .hl-flag { color: var(--accent); }
+  .command-preview pre .hl-val  { color: var(--green); }
+  .command-preview pre .hl-opt  { color: var(--orange); }
+  .command-preview pre .hl-comment { color: var(--text-dim); font-style: italic; }
+  .command-preview pre .hl-hf   { color: #c084fc; } /* purple for -hf */
+
+  /* ── Status / Tips ── */
+  .tips {
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .tips h3 {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+  }
+  .tips ul { list-style: none; padding: 0; }
+  .tips li {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+    padding: 3px 0;
+    padding-left: 14px;
+    position: relative;
+  }
+  .tips li::before {
+    content: '>';
+    position: absolute;
+    left: 0;
+    color: var(--accent);
+    font-family: var(--font);
+  }
+
+  /* ── File suggestions dropdown ── */
+  .file-suggest {
+    position: relative;
+  }
+  .file-suggest .suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 var(--radius) var(--radius);
+    max-height: 160px;
+    overflow-y: auto;
+    z-index: 10;
+    display: none;
+  }
+  .file-suggest .suggestions.show { display: block; }
+  .file-suggest .suggestions div {
+    padding: 6px 12px;
+    font-size: 0.8rem;
+    font-family: var(--font);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .file-suggest .suggestions div:hover { background: var(--surface); color: var(--accent); }
+
+  /* ── Responsive ── */
+  @media (max-width: 820px) {
+    .app { flex-direction: column; }
+    .panel-left { width: 100%; min-width: 0; border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; }
+    .panel-right { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>llama<span>-server</span></h1>
+  <span class="sub">launcher · tools/llama-server-launcher.html</span>
+</header>
+
+<div class="app">
+
+  <!-- ─── LEFT PANEL ─── -->
+  <div class="panel-left" id="leftPanel">
+
+    <!-- Mode Presets -->
+    <div class="section">
+      <div class="section-title">Quick Mode</div>
+      <div class="mode-presets">
+        <button class="mode-btn active" data-mode="basic">Basic Chat</button>
+        <button class="mode-btn" data-mode="multimodal">Vision</button>
+        <button class="mode-btn" data-mode="router">Router</button>
+        <button class="mode-btn" data-mode="lora">LoRA Personas</button>
+      </div>
+    </div>
+
+    <!-- Model -->
+    <div class="section">
+      <div class="section-title">Base Model</div>
+      <div class="field file-suggest" id="modelField">
+        <label>GGUF model path or <code>-hf</code> repo</label>
+        <input type="text" id="modelPath" placeholder="/models/mistral-7b.gguf" value="" spellcheck="false">
+        <div class="suggestions" id="modelSuggestions"></div>
+      </div>
+    </div>
+
+    <!-- Multimodal Model Picker -->
+    <div class="section" id="mmSection" style="display:none;">
+      <div class="section-title">Multimodal Models</div>
+      <div class="mm-grid" id="mmGrid"></div>
+      <div style="margin-top:10px">
+        <div class="toggle-row" id="toggleMmprojOffload">
+          <div class="toggle-track active" id="mmprojOffloadTrack"><div class="toggle-knob"></div></div>
+          <span class="toggle-label">GPU offload mmproj <code>--mmproj-offload</code></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Server Config -->
+    <div class="section">
+      <div class="section-title">Server</div>
+      <div class="field-row">
+        <div class="field">
+          <label>Host</label>
+          <input type="text" id="host" value="127.0.0.1" spellcheck="false">
+        </div>
+        <div class="field" style="max-width:100px">
+          <label>Port</label>
+          <input type="number" id="port" value="8080" min="1" max="65535">
+        </div>
+        <div class="field" style="max-width:90px">
+          <label>n-gpu-layers</label>
+          <input type="number" id="gpuLayers" value="-1" min="-1" placeholder="auto">
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Context size</label>
+          <input type="number" id="ctxSize" value="4096" min="256" step="512">
+        </div>
+        <div class="field">
+          <label>Batch size</label>
+          <input type="number" id="batchSize" value="2048" min="64" step="128">
+        </div>
+      </div>
+    </div>
+
+    <!-- LoRA Adapters -->
+    <div class="section" id="loraSection" style="display:none;">
+      <div class="section-title">LoRA Adapters</div>
+      <div class="preset-bar">
+        <button class="btn-preset" id="loadPersonas">&#9679; Load 2.4 Personas</button>
+        <button class="btn-preset" id="clearLoras" style="color:var(--text-dim);border-color:var(--border)">Clear All</button>
+      </div>
+      <div class="lora-list" id="loraList"></div>
+      <button class="btn-add" id="addLora">+ Add Adapter</button>
+      <div style="margin-top:10px">
+        <div class="toggle-row" id="toggleInitWithoutApply">
+          <div class="toggle-track active" id="initWithoutApplyTrack"><div class="toggle-knob"></div></div>
+          <span class="toggle-label">Load without applying <code>--lora-init-without-apply</code></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Advanced Options -->
+    <div class="section">
+      <div class="section-title">Options</div>
+      <div class="toggle-row" id="toggleFlashAttn">
+        <div class="toggle-track" id="flashAttnTrack"><div class="toggle-knob"></div></div>
+        <span class="toggle-label">Flash attention <code>--flash-attn on</code></span>
+      </div>
+      <div class="toggle-row" id="toggleMLock">
+        <div class="toggle-track" id="mlockTrack"><div class="toggle-knob"></div></div>
+        <span class="toggle-label">Pin to RAM <code>--mlock</code></span>
+      </div>
+      <div class="toggle-row" id="toggleMetrics">
+        <div class="toggle-track" id="metricsTrack"><div class="toggle-knob"></div></div>
+        <span class="toggle-label">Prometheus metrics <code>--metrics</code></span>
+      </div>
+      <div class="toggle-row" id="toggleEmbedding">
+        <div class="toggle-track" id="embeddingTrack"><div class="toggle-knob"></div></div>
+        <span class="toggle-label">Enable embeddings <code>--embeddings</code></span>
+      </div>
+      <div class="toggle-row" id="toggleAutoKill">
+        <div class="toggle-track active" id="autoKillTrack"><div class="toggle-knob"></div></div>
+        <span class="toggle-label">Auto-kill process on port before start</span>
+      </div>
+      <div class="toggle-row" id="toggleCors" style="border-bottom:none">
+        <div class="toggle-track" id="corsTrack"><div class="toggle-knob"></div></div>
+        <span class="toggle-label">Enable CORS <code>--cors *</code>
+          <span style="color:var(--text-dim);font-weight:normal;font-size:12px">(needed for chain-workbench.html)</span></span>
+      </div>
+      <div class="field" style="margin-top:8px">
+        <label>Extra flags (space-separated)</label>
+        <input type="text" id="extraFlags" placeholder="--no-mmap --temp 0.7" spellcheck="false">
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── RIGHT PANEL ─── -->
+  <div class="panel-right" id="rightPanel">
+    <div class="command-preview">
+      <div class="cmd-header">
+        <span id="cmdLabel">llama-server · Basic Chat</span>
+        <div class="cmd-actions">
+          <button id="copyCmd">📋 Copy</button>
+          <button id="clearCmd">Reset</button>
+        </div>
+      </div>
+      <pre id="cmdOutput"><span class="hl-comment"># configure your model and options on the left →</span></pre>
+    </div>
+
+    <div class="tips">
+      <h3>Tips</h3>
+      <ul id="tipsList">
+        <li>Type a model path or use <strong>-hf repo:quant</strong> to download from Hugging Face</li>
+        <li>Switch to <strong>Vision</strong> mode to pick a multimodal model (image/audio/video)</li>
+        <li>Switch to <strong>LoRA Personas</strong> mode to add adapter presets from project 2.4</li>
+        <li>Set <strong>n-gpu-layers</strong> to -1 for auto, 0 for CPU-only</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ─── Multimodal model database ───
+  const MULTIMODAL_MODELS = [
+    {
+      id: 'gemma4-e2b',
+      name: 'Gemma 4 E2B',
+      repo: 'ggml-org/gemma-4-E2B-it-GGUF',
+      quant: 'Q4_K_M',
+      size: '~7 GB',
+      tags: ['image', 'audio'],
+      desc: 'Google — newest gen, 2 experts, vision + audio',
+    },
+    {
+      id: 'gemma4-e4b',
+      name: 'Gemma 4 E4B',
+      repo: 'ggml-org/gemma-4-E4B-it-GGUF',
+      quant: 'Q4_K_M',
+      size: '~12 GB',
+      tags: ['image', 'audio'],
+      desc: 'Google — 4 experts, higher quality, needs ~14 GB',
+    },
+    {
+      id: 'gemma3-4b',
+      name: 'Gemma 3 4B',
+      repo: 'ggml-org/gemma-3-4b-it-GGUF',
+      quant: 'Q4_K_M',
+      size: '~3 GB',
+      tags: ['image'],
+      desc: 'Google — fast, great quality, tiny footprint',
+    },
+    {
+      id: 'gemma3-12b',
+      name: 'Gemma 3 12B',
+      repo: 'ggml-org/gemma-3-12b-it-GGUF',
+      quant: 'Q4_K_M',
+      size: '~9 GB',
+      tags: ['image'],
+      desc: 'Google — higher quality, needs ~12 GB VRAM',
+    },
+    {
+      id: 'qwen25vl-3b',
+      name: 'Qwen2.5 VL 3B',
+      repo: 'ggml-org/Qwen2.5-VL-3B-Instruct-GGUF',
+      quant: 'Q4_K_M',
+      size: '~3.5 GB',
+      tags: ['image'],
+      desc: 'Alibaba — strong vision understanding, small',
+    },
+    {
+      id: 'qwen25vl-7b',
+      name: 'Qwen2.5 VL 7B',
+      repo: 'ggml-org/Qwen2.5-VL-7B-Instruct-GGUF',
+      quant: 'Q4_K_M',
+      size: '~8 GB',
+      desc: 'Alibaba — excellent vision-language balance',
+      tags: ['image'],
+    },
+    {
+      id: 'smolvlm2-2.2b',
+      name: 'SmolVLM2 2.2B',
+      repo: 'ggml-org/SmolVLM2-2.2B-Instruct-GGUF',
+      quant: 'Q4_K_M',
+      size: '~5 GB',
+      tags: ['image', 'video'],
+      desc: 'HuggingFaceTB — video + images, very efficient',
+    },
+    {
+      id: 'smolvlm2-video-500m',
+      name: 'SmolVLM2 500M Video',
+      repo: 'ggml-org/SmolVLM2-500M-Video-Instruct-GGUF',
+      quant: 'Q4_K_M',
+      size: '~1.5 GB',
+      tags: ['image', 'video'],
+      desc: 'Tiny video model — runs anywhere',
+    },
+    {
+      id: 'pixtral-12b',
+      name: 'Pixtral 12B',
+      repo: 'ggml-org/pixtral-12b-GGUF',
+      quant: 'Q4_K_M',
+      size: '~12 GB',
+      tags: ['image'],
+      desc: 'Mistral — top-tier document/image understanding',
+    },
+    {
+      id: 'qwen25omni-7b',
+      name: 'Qwen2.5 Omni 7B',
+      repo: 'ggml-org/Qwen2.5-Omni-7B-GGUF',
+      quant: 'Q4_K_M',
+      size: '~8 GB',
+      tags: ['image', 'audio'],
+      desc: 'Alibaba — vision + speech in one model',
+    },
+    {
+      id: 'qwen25omni-3b',
+      name: 'Qwen2.5 Omni 3B',
+      repo: 'ggml-org/Qwen2.5-Omni-3B-GGUF',
+      quant: 'Q4_K_M',
+      size: '~3.5 GB',
+      tags: ['image', 'audio'],
+      desc: 'Alibaba — lightweight vision + speech',
+    },
+  ];
+
+  // ─── State ───
+  const state = {
+    adapters: [],
+    toggles: {
+      initWithoutApply: true,
+      flashAttn: false,
+      mlock: false,
+      metrics: false,
+      embedding: false,
+      mmprojOffload: true,
+      autoKill: true,
+    },
+    selectedMmModel: null,
+  };
+
+  const loraPersonas = [
+    { path: '/adapters/legal-tone.gguf', scale: 1.0, tag: 'legal' },
+    { path: '/adapters/concise-summarizer.gguf', scale: 0.8, tag: 'summarizer' },
+    { path: '/adapters/code-reviewer.gguf', scale: 1.0, tag: 'code-reviewer' },
+    { path: '/adapters/creative-writer.gguf', scale: 1.2, tag: 'creative' },
+    { path: '/adapters/teacher.gguf', scale: 0.9, tag: 'teacher' },
+  ];
+
+  // ─── DOM refs ───
+  const $ = id => document.getElementById(id);
+  const modelPath      = $('modelPath');
+  const host           = $('host');
+  const port           = $('port');
+  const gpuLayers      = $('gpuLayers');
+  const ctxSize        = $('ctxSize');
+  const batchSize      = $('batchSize');
+  const extraFlags     = $('extraFlags');
+  const loraList       = $('loraList');
+  const cmdOutput      = $('cmdOutput');
+  const copyBtn        = $('copyCmd');
+  const cmdLabel       = $('cmdLabel');
+  const tipsList       = $('tipsList');
+  const mmGrid         = $('mmGrid');
+  const mmSection      = $('mmSection');
+  const loraSection    = $('loraSection');
+
+  // ─── Render Multimodal Model Grid ───
+  function renderMmGrid() {
+    mmGrid.innerHTML = '';
+    MULTIMODAL_MODELS.forEach(mm => {
+      const card = document.createElement('div');
+      card.className = 'mm-card' + (state.selectedMmModel === mm.id ? ' selected' : '');
+      card.dataset.id = mm.id;
+
+      const info = document.createElement('div');
+      info.className = 'mm-info';
+      info.innerHTML = `<div class="mm-name">${mm.name}</div><div class="mm-desc">${mm.desc}</div>`;
+
+      const size = document.createElement('span');
+      size.className = 'mm-size';
+      size.textContent = mm.size;
+
+      const tags = document.createElement('div');
+      tags.className = 'mm-tags';
+      mm.tags.forEach(t => {
+        const tag = document.createElement('span');
+        tag.className = 'mm-tag ' + t;
+        const icons = { image: '🖼', video: '🎬', audio: '🎤' };
+        tag.textContent = (icons[t] || '') + ' ' + t;
+        tags.appendChild(tag);
+      });
+
+      card.appendChild(info);
+      card.appendChild(size);
+      card.appendChild(tags);
+
+      card.addEventListener('click', () => {
+        state.selectedMmModel = (state.selectedMmModel === mm.id) ? null : mm.id;
+        renderMmGrid();
+        // Update model path
+        if (state.selectedMmModel) {
+          modelPath.value = `-hf ${mm.repo}:${mm.quant}`;
+        } else {
+          modelPath.value = '';
+        }
+        rebuildCommand();
+      });
+
+      mmGrid.appendChild(card);
+    });
+  }
+
+  // ─── Render LoRA rows ───
+  function renderLoras() {
+    loraList.innerHTML = '';
+    state.adapters.forEach((adapter, i) => {
+      const row = document.createElement('div');
+      row.className = 'lora-row';
+
+      const pathDiv = document.createElement('div');
+      pathDiv.className = 'lora-path';
+      const pathInput = document.createElement('input');
+      pathInput.type = 'text';
+      pathInput.value = adapter.path;
+      pathInput.spellcheck = false;
+      pathInput.placeholder = '/adapters/my-lora.gguf';
+      pathInput.addEventListener('input', () => {
+        state.adapters[i].path = pathInput.value;
+        rebuildCommand();
+      });
+      pathInput.addEventListener('focus', () => row.classList.add('has-focus'));
+      pathInput.addEventListener('blur', () => row.classList.remove('has-focus'));
+      pathDiv.appendChild(pathInput);
+
+      const scaleDiv = document.createElement('div');
+      scaleDiv.className = 'lora-scale';
+      const scaleRange = document.createElement('input');
+      scaleRange.type = 'range';
+      scaleRange.min = '0.0';
+      scaleRange.max = '2.0';
+      scaleRange.step = '0.05';
+      scaleRange.value = adapter.scale;
+      const scaleVal = document.createElement('span');
+      scaleVal.className = 'lora-scale-val';
+      scaleVal.textContent = adapter.scale.toFixed(2);
+      scaleRange.addEventListener('input', () => {
+        const v = parseFloat(scaleRange.value);
+        state.adapters[i].scale = v;
+        scaleVal.textContent = v.toFixed(2);
+        rebuildCommand();
+      });
+      scaleDiv.appendChild(scaleRange);
+      scaleDiv.appendChild(scaleVal);
+
+      const rmBtn = document.createElement('button');
+      rmBtn.className = 'lora-remove';
+      rmBtn.textContent = '×';
+      rmBtn.title = 'Remove adapter';
+      rmBtn.addEventListener('click', () => {
+        state.adapters.splice(i, 1);
+        renderLoras();
+        rebuildCommand();
+      });
+
+      row.appendChild(pathDiv);
+      row.appendChild(scaleDiv);
+      row.appendChild(rmBtn);
+      loraList.appendChild(row);
+    });
+  }
+
+  // ─── Add LoRA row ───
+  $('addLora').addEventListener('click', () => {
+    state.adapters.push({ path: '', scale: 1.0 });
+    renderLoras();
+    rebuildCommand();
+    setTimeout(() => {
+      const rows = loraList.querySelectorAll('.lora-row');
+      if (rows.length) rows[rows.length - 1].querySelector('input')?.focus();
+    }, 50);
+  });
+
+  // ─── Load 2.4 Personas ───
+  $('loadPersonas').addEventListener('click', () => {
+    state.adapters = loraPersonas.map(p => ({ path: p.path, scale: p.scale }));
+    renderLoras();
+    rebuildCommand();
+  });
+
+  // ─── Clear LoRAs ───
+  $('clearLoras').addEventListener('click', () => {
+    state.adapters = [];
+    renderLoras();
+    rebuildCommand();
+  });
+
+  // ─── Toggle helper ───
+  function setupToggle(trackId, stateKey) {
+    const track = document.getElementById(trackId);
+    track.addEventListener('click', () => {
+      state.toggles[stateKey] = !state.toggles[stateKey];
+      track.classList.toggle('active', state.toggles[stateKey]);
+      rebuildCommand();
+    });
+  }
+  setupToggle('initWithoutApplyTrack', 'initWithoutApply');
+  setupToggle('flashAttnTrack', 'flashAttn');
+  setupToggle('mlockTrack', 'mlock');
+  setupToggle('metricsTrack', 'metrics');
+  setupToggle('embeddingTrack', 'embedding');
+  setupToggle('mmprojOffloadTrack', 'mmprojOffload');
+  setupToggle('autoKillTrack', 'autoKill');
+  setupToggle('corsTrack', 'cors');
+
+  // ─── Mode presets ───
+  const modeBtns = document.querySelectorAll('.mode-btn');
+  modeBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      modeBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const mode = btn.dataset.mode;
+
+      // Show/hide sections
+      mmSection.style.display = (mode === 'multimodal') ? '' : 'none';
+      loraSection.style.display = (mode === 'lora') ? '' : 'none';
+
+      // Update label + tips
+      const modeNames = { basic: 'Basic Chat', multimodal: 'Vision', router: 'Router / Multi-Model', lora: 'LoRA Personas' };
+      cmdLabel.textContent = 'llama-server · ' + (modeNames[mode] || mode);
+
+      // Update tips per mode
+      const modeTips = {
+        basic: [
+          'Type a model path or use <strong>-hf repo:quant</strong> to download from Hugging Face',
+          'Set <strong>n-gpu-layers</strong> to -1 for auto, 0 for CPU-only',
+          'Toggle Flash Attention for faster inference on Apple Silicon',
+        ],
+        multimodal: [
+          'Click a model card to auto-fill the <strong>-hf</strong> repo',
+          'The WebUI will show image/audio upload buttons automatically',
+          'Gemma 3 4B (~3 GB) is the fastest option for your M5',
+          'Use SmolVLM2 for <strong>video</strong> understanding',
+        ],
+        router: [
+          'Router mode needs <code>--models-dir</code> or <code>--models-preset</code> in Extra Flags',
+          'Set <code>--models-dir /path/to/models</code> to serve multiple models',
+          'Or use <code>--models-preset my-preset.ini</code> for predefined model sets',
+        ],
+        lora: [
+          'Click <strong>Load 2.4 Personas</strong> to auto-fill 5 LoRA adapters from project 2.4',
+          'Drag scale sliders to control adapter strength (1.0 = normal)',
+          'The server must be started with <code>--lora-init-without-apply</code>',
+        ],
+      };
+      const tips = modeTips[mode] || modeTips.basic;
+      tipsList.innerHTML = tips.map(t => '<li>' + t + '</li>').join('');
+
+      rebuildCommand();
+    });
+  });
+
+  // ─── Build command ───
+  function esc(s) {
+    if (s && /[\s]/.test(s)) return `"${s}"`;
+    return s || '';
+  }
+
+  function rebuildCommand() {
+    const parts = [];
+
+    // Auto-kill existing process on target port
+    if (state.toggles.autoKill) {
+      const p = parseInt(port.value) || 8080;
+      parts.push('# Kill any process already on port ' + p);
+      parts.push('kill $(lsof -ti:' + p + ' 2>/dev/null)');
+      parts.push('');
+    }
+
+    parts.push('llama-server \\');
+
+    // Model (-hf or --model)
+    const mp = modelPath.value.trim();
+    const isHf = mp.startsWith('-hf ');
+    if (mp) {
+      if (isHf) {
+        parts.push('    ' + mp + ' \\');
+      } else {
+        parts.push('    --model ' + esc(mp) + ' \\');
+      }
+    }
+
+    // GPU layers
+    const gl = parseInt(gpuLayers.value);
+    if (!isNaN(gl) && gl >= 0) {
+      parts.push('    --n-gpu-layers ' + gl + ' \\');
+    }
+
+    // Context / batch
+    const cs = parseInt(ctxSize.value);
+    if (!isNaN(cs) && cs > 0) {
+      parts.push('    --ctx-size ' + cs + ' \\');
+    }
+    const bs = parseInt(batchSize.value);
+    if (!isNaN(bs) && bs > 0) {
+      parts.push('    --batch-size ' + bs + ' \\');
+    }
+
+    // Multimodal: mmproj offload toggle
+    const mode = document.querySelector('.mode-btn.active')?.dataset.mode || 'basic';
+    if (mode === 'multimodal' && !state.toggles.mmprojOffload) {
+      parts.push('    --no-mmproj-offload \\');
+    }
+
+    // LoRA adapters
+    const activeLoras = state.adapters.filter(a => a.path.trim());
+    if (activeLoras.length > 0 && mode === 'lora') {
+      const scaled = activeLoras.map(a => esc(a.path.trim()) + ':' + a.scale.toFixed(1)).join(',');
+      parts.push('    --lora-scaled ' + scaled + ' \\');
+      if (state.toggles.initWithoutApply) {
+        parts.push('    --lora-init-without-apply \\');
+      }
+    }
+
+    // Flash attention
+    if (state.toggles.flashAttn) {
+      parts.push('    --flash-attn on \\');
+    }
+
+    // Mlock
+    if (state.toggles.mlock) {
+      parts.push('    --mlock \\');
+    }
+
+    // Metrics
+    if (state.toggles.metrics) {
+      parts.push('    --metrics \\');
+    }
+
+    // Embeddings
+    if (state.toggles.embedding) {
+      parts.push('    --embeddings \\');
+    }
+
+    // CORS (needed for workbench cross-origin requests)
+    if (state.toggles.cors) {
+      parts.push('    --cors * \\');
+    }
+
+    // Host / Port
+    const h = host.value.trim() || '127.0.0.1';
+    parts.push('    --host ' + h + ' \\');
+    parts.push('    --port ' + (parseInt(port.value) || 8080) + ' \\');
+
+    // Extra flags
+    const ef = extraFlags.value.trim();
+    if (ef) {
+      parts.push('    ' + ef);
+    }
+
+    // Format with syntax highlighting
+    const text = parts.join('\n').replace(/ \\$/, '');
+    cmdOutput.innerHTML = syntaxHighlight(text) || '<span class="hl-comment"># configure your model and options on the left →</span>';
+  }
+
+  function syntaxHighlight(text) {
+    if (!text) return '';
+    const lines = text.split('\n');
+    return lines.map(line => {
+      if (/^\s*#/.test(line)) {
+        return '<span class="hl-comment">' + escapeHtml(line) + '</span>';
+      }
+      let hl = escapeHtml(line);
+      // Highlight -hf repos in purple
+      hl = hl.replace(/(-hf\s+\S+)/g, '<span class="hl-hf">$1</span>');
+      // Highlight flags: --xxxx
+      hl = hl.replace(/(--[\w-]+)/g, '<span class="hl-flag">$1</span>');
+      // Highlight values in "quotes"
+      hl = hl.replace(/(&quot;[^&quot;]*&quot;)/g, '<span class="hl-val">$1</span>');
+      // Highlight numbers
+      hl = hl.replace(/\b(\d+\.?\d*)\b/g, '<span class="hl-opt">$1</span>');
+      return hl;
+    }).join('\n');
+  }
+
+  function escapeHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  // ─── Live rebuild on any input ───
+  document.querySelectorAll('input, select').forEach(el => {
+    el.addEventListener('input', rebuildCommand);
+    el.addEventListener('change', rebuildCommand);
+  });
+
+  // ─── Copy command ───
+  copyBtn.addEventListener('click', async () => {
+    const raw = cmdOutput.textContent;
+    if (!raw || raw.startsWith('#')) return;
+    try {
+      await navigator.clipboard.writeText(raw);
+      copyBtn.textContent = 'Copied!';
+      copyBtn.classList.add('copied');
+      setTimeout(() => {
+        copyBtn.textContent = '📋 Copy';
+        copyBtn.classList.remove('copied');
+      }, 2000);
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = raw;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+      copyBtn.textContent = 'Copied!';
+      setTimeout(() => { copyBtn.textContent = '📋 Copy'; }, 2000);
+    }
+  });
+
+  // ─── Reset ───
+  $('clearCmd').addEventListener('click', () => {
+    modelPath.value = '';
+    host.value = '127.0.0.1';
+    port.value = '8080';
+    gpuLayers.value = '-1';
+    ctxSize.value = '4096';
+    batchSize.value = '2048';
+    extraFlags.value = '';
+    state.adapters = [];
+    state.selectedMmModel = null;
+    Object.keys(state.toggles).forEach(k => { state.toggles[k] = false; });
+    state.toggles.cors = true;
+    state.toggles.initWithoutApply = true;
+    state.toggles.mmprojOffload = true;
+    state.toggles.autoKill = true;
+    document.querySelectorAll('.toggle-track').forEach(t => t.classList.remove('active'));
+    $('corsTrack').classList.add('active');
+    $('initWithoutApplyTrack').classList.add('active');
+    $('mmprojOffloadTrack').classList.add('active');
+    $('autoKillTrack').classList.add('active');
+    renderLoras();
+    renderMmGrid();
+    rebuildCommand();
+  });
+
+  // ─── File suggestions ───
+  const suggestions = $('modelSuggestions');
+  modelPath.addEventListener('focus', () => {
+    const val = modelPath.value.trim().toLowerCase();
+    const common = [
+      '-hf deepreinforce-ai/Ornith-1.0-9B-GGUF:Q4_K_M',
+      '-hf ggml-org/gemma-4-E2B-it-GGUF:Q4_K_M',
+      '-hf ggml-org/gemma-4-E4B-it-GGUF:Q4_K_M',
+      '-hf ggml-org/gemma-3-4b-it-GGUF:Q4_K_M',
+      './models/mistral-7b.Q4_K_M.gguf',
+      './models/llama-3-8b.Q4_K_M.gguf',
+      '~/models/phi-3-mini.Q4_K_M.gguf',
+    ];
+    const filtered = val ? common.filter(p => p.toLowerCase().includes(val)) : common;
+    suggestions.innerHTML = filtered.map(p => '<div>' + escapeHtml(p) + '</div>').join('');
+    suggestions.classList.add('show');
+    suggestions.querySelectorAll('div').forEach(el => {
+      el.addEventListener('click', () => {
+        modelPath.value = el.textContent;
+        // If it's an -hf path, deselect any multimodal card
+        if (el.textContent.startsWith('-hf ')) {
+          state.selectedMmModel = null;
+          renderMmGrid();
+        }
+        suggestions.classList.remove('show');
+        rebuildCommand();
+      });
+    });
+  });
+  modelPath.addEventListener('blur', () => {
+    setTimeout(() => suggestions.classList.remove('show'), 150);
+  });
+
+  // ─── Init ───
+  renderMmGrid();
+  renderLoras();
+  rebuildCommand();
+
+})();
+</script>
+</body>
+</html>

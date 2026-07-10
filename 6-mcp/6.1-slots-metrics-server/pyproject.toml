@@ -1,0 +1,14 @@
+[project]
+name = "metrics-server"
+version = "0.1.0"
+description = "MCP server exposing system metrics (CPU, memory, disk) as tools"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

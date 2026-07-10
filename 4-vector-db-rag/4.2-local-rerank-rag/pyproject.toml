@@ -1,0 +1,15 @@
+[project]
+name = "local-rerank-rag"
+version = "0.1.0"
+description = "RAG pipeline with local cross-encoder reranking via llm-as-judge"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,12 @@
+[project]
+name = "human-approval-loop"
+version = "0.1.0"
+description = "Agent workflow with human-in-the-loop approval gates"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

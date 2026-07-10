@@ -1,0 +1,12 @@
+[project]
+name = "checkpoint-rollback-agent"
+version = "0.1.0"
+description = "Checkpoint and rollback for multi-step agent workflows"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

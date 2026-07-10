@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "function": {
+      "type": "string",
+      "enum": ["get_weather", "search_flights", "book_hotel", "send_email", "calculate", "translate"]
+    },
+    "arguments": {
+      "type": "object",
+      "properties": {
+        "location": { "type": "string" },
+        "date": { "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$" },
+        "query": { "type": "string" },
+        "recipient": { "type": "string" },
+        "expression": { "type": "string" },
+        "source_lang": { "type": "string" },
+        "target_lang": { "type": "string" }
+      },
+      "minProperties": 1
+    }
+  },
+  "required": ["function", "arguments"]
+}

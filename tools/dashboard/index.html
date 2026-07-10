@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>llama-cpp Interactive Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --card-hover: #1c2333;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Noto Sans, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+  .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+  .header { text-align: center; padding: 24px 0 20px; }
+  .header h1 { font-size: 28px; font-weight: 600; }
+  .header p { color: var(--muted); margin-top: 4px; font-size: 14px; }
+  .header .subtitle { margin-top: 4px; color: var(--muted); font-size: 13px; }
+
+  .controls { display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap; padding: 16px 24px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 24px; }
+  .controls label { color: var(--muted); font-size: 13px; font-weight: 500; }
+  .controls select { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 14px; cursor: pointer; min-width: 160px; }
+  .controls select:focus { outline: none; border-color: var(--accent); }
+  .conn-status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; padding: 4px 12px; border-radius: 12px; }
+  .conn-status.connected { background: rgba(63,185,80,0.15); color: var(--green); }
+  .conn-status.disconnected { background: rgba(248,81,73,0.15); color: var(--red); }
+  .conn-status .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .conn-status.connected .dot { background: var(--green); }
+  .conn-status.disconnected .dot { background: var(--red); }
+
+  .category { margin-bottom: 28px; }
+  .category-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .category-header h2 { font-size: 18px; font-weight: 600; }
+  .category-header .cat-icon { font-size: 22px; }
+  .category-header .count { font-size: 12px; color: var(--muted); background: var(--border); padding: 2px 8px; border-radius: 10px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; cursor: pointer; transition: all 0.18s ease; position: relative; overflow: hidden; }
+  .card:hover { background: var(--card-hover); border-color: var(--accent); transform: translateY(-1px); }
+  .card:active { transform: translateY(0); }
+  .card .icon { font-size: 24px; margin-bottom: 8px; }
+  .card .name { font-size: 14px; font-weight: 600; margin-bottom: 4px; }
+  .card .desc { font-size: 12px; color: var(--muted); line-height: 1.4; }
+  .card .badge { position: absolute; top: 10px; right: 10px; font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(88,166,255,0.15); color: var(--accent); }
+  .card.loading { pointer-events: none; opacity: 0.7; }
+  .card.loading::after { content: ''; position: absolute; bottom: 0; left: 0; height: 2px; background: var(--accent); animation: loading-bar 1.8s ease infinite; }
+  @keyframes loading-bar { 0% { width: 0; } 50% { width: 100%; } 100% { width: 0; } }
+  .card.done { border-color: var(--green); }
+  .card.error { border-color: var(--red); }
+
+  .response-panel { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-top: 20px; display: none; }
+  .response-panel.visible { display: block; }
+  .response-panel .rp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .response-panel .rp-title { font-size: 16px; font-weight: 600; }
+  .response-panel .rp-meta { font-size: 12px; color: var(--muted); display: flex; gap: 16px; }
+  .response-panel .rp-meta span { display: flex; align-items: center; gap: 4px; }
+  .response-panel .rp-body { font-size: 14px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+  .response-panel .rp-body .cursor { display: inline-block; width: 2px; height: 1em; background: var(--accent); animation: blink 0.7s step-end infinite; vertical-align: text-bottom; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .response-panel .rp-actions { display: flex; gap: 8px; margin-top: 12px; }
+  .response-panel button { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; cursor: pointer; transition: all 0.15s; }
+  .response-panel button:hover { background: var(--card-hover); border-color: var(--accent); }
+  .response-panel .close-btn { margin-left: auto; background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; padding: 0 4px; }
+  .response-panel .close-btn:hover { color: var(--text); }
+
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+  .loading-overlay { display: none; position: fixed; inset: 0; background: rgba(13,17,23,0.6); z-index: 100; justify-content: center; align-items: center; }
+  .loading-overlay.visible { display: flex; }
+  .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 640px) {
+    .grid { grid-template-columns: 1fr; }
+    .controls { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loadingOverlay"><div class="spinner"></div></div>
+
+<div class="container">
+
+  <div class="header">
+    <h1>🦙 llama-cpp Interactive Dashboard</h1>
+    <p>Select a provider &amp; model, then click any project card to get a live LLM response</p>
+    <div class="subtitle" id="modelInfo"></div>
+  </div>
+
+  <div class="controls">
+    <label for="provider">Provider</label>
+    <select id="provider" onchange="switchProvider()">
+      <option value="ollama">Ollama</option>
+      <option value="llama.cpp">llama.cpp</option>
+      <option value="mlx">MLX</option>
+    </select>
+
+    <label for="model">Model</label>
+    <select id="model" onchange="switchModel()">
+      <option value="">— loading —</option>
+    </select>
+
+    <div class="conn-status disconnected" id="connStatus">
+      <span class="dot"></span>
+      <span id="connLabel">Disconnected</span>
+    </div>
+  </div>
+
+  <div id="dashboard"></div>
+
+  <div class="response-panel" id="responsePanel">
+    <div class="rp-header">
+      <div>
+        <div class="rp-title" id="rpTitle">Project Response</div>
+        <div class="rp-meta" id="rpMeta">
+          <span id="rpTiming"></span>
+          <span id="rpModel"></span>
+          <span id="rpProvider"></span>
+        </div>
+      </div>
+      <button class="close-btn" onclick="hideResponse()">&times;</button>
+    </div>
+    <div class="rp-body" id="rpBody"></div>
+    <div class="rp-actions">
+      <button onclick="copyResponse()">Copy</button>
+      <button onclick="reRunProject()">Re-run</button>
+      <button onclick="clearResponse()">Clear</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const state = {
+    projects: [],
+    categories: {},
+    activeProjectId: null,
+    pendingProjectId: null,
+    abortController: null,
+};
+
+async function init() {
+    try {
+        await loadProjects();
+        await switchProvider(true);
+    } catch (e) {
+        console.error("Init error:", e);
+    }
+}
+
+async function loadProjects() {
+    const res = await fetch("/api/projects");
+    const data = await res.json();
+    state.categories = data.categories;
+    state.projects = data.projects;
+    renderDashboard();
+}
+
+async function switchProvider(silent) {
+    const sel = document.getElementById("provider");
+    const provider = sel.value;
+
+    if (!silent) {
+        document.getElementById("loadingOverlay").classList.add("visible");
+    }
+
+    try {
+        const res = await fetch("/api/switch-provider", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({provider}),
+        });
+        const data = await res.json();
+        updateConnStatus(data.connected, provider);
+        await refreshModels();
+    } catch (e) {
+        updateConnStatus(false, provider);
+    } finally {
+        document.getElementById("loadingOverlay").classList.remove("visible");
+    }
+}
+
+async function refreshModels() {
+    const res = await fetch("/api/models");
+    const data = await res.json();
+    const sel = document.getElementById("model");
+    sel.innerHTML = "";
+
+    if (!data.connected || !data.models.length) {
+        sel.innerHTML = '<option value="">— no models —</option>';
+        updateConnStatus(false, data.provider);
+        document.getElementById("modelInfo").textContent = "No models detected — start your server first";
+        return;
+    }
+
+    data.models.forEach(m => {
+        const opt = document.createElement("option");
+        opt.value = m;
+        opt.textContent = m;
+        if (m === data.active_model) opt.selected = true;
+        sel.appendChild(opt);
+    });
+
+    const embedCount = data.embedding_models?.length || 0;
+    document.getElementById("modelInfo").textContent =
+        `${data.models.length} model${data.models.length > 1 ? 's' : ''} available · ${embedCount} embedder${embedCount !== 1 ? 's' : ''}`;
+}
+
+async function switchModel() {
+    const model = document.getElementById("model").value;
+    if (!model) return;
+    await fetch("/api/switch-model", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({model}),
+    });
+}
+
+function updateConnStatus(connected, provider) {
+    const el = document.getElementById("connStatus");
+    const lbl = document.getElementById("connLabel");
+    if (connected) {
+        el.className = "conn-status connected";
+        lbl.textContent = provider;
+    } else {
+        el.className = "conn-status disconnected";
+        lbl.textContent = "Disconnected";
+    }
+}
+
+function renderDashboard() {
+    const root = document.getElementById("dashboard");
+    root.innerHTML = "";
+
+    const cats = {};
+    state.projects.forEach(p => {
+        if (!cats[p.cat]) cats[p.cat] = [];
+        cats[p.cat].push(p);
+    });
+
+    Object.keys(cats).sort().forEach(catId => {
+        const cat = state.categories[catId] || {name: `Category ${catId}`, icon: "📁"};
+        const projects = cats[catId];
+        const section = document.createElement("div");
+        section.className = "category";
+
+        section.innerHTML = `
+            <div class="category-header">
+                <span class="cat-icon">${cat.icon}</span>
+                <h2>${cat.name}</h2>
+                <span class="count">${projects.length} projects</span>
+            </div>
+            <div class="grid" id="grid-${catId}">
+                ${projects.map(p => `
+                    <div class="card" id="card-${p.id}" onclick="runProject('${p.id}')">
+                        <div class="badge">${p.id}</div>
+                        <div class="icon">${p.icon}</div>
+                        <div class="name">${p.name}</div>
+                        <div class="desc">${p.desc}</div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+        root.appendChild(section);
+    });
+}
+
+async function runProject(projectId) {
+    if (state.pendingProjectId) return;
+
+    const model = document.getElementById("model").value;
+    const provider = document.getElementById("provider").value;
+
+    if (!model || model === "— no models —") {
+        showResponse("No model selected. Connect to a provider and select a model first.", null, model, provider);
+        return;
+    }
+
+    state.pendingProjectId = projectId;
+    state.activeProjectId = projectId;
+
+    document.querySelectorAll(".card").forEach(c => c.classList.remove("done", "error"));
+    const card = document.getElementById(`card-${projectId}`);
+    if (card) card.classList.add("loading");
+
+    const project = state.projects.find(p => p.id === projectId);
+    showResponse(`Contacting ${provider}:${model} for "${project?.name || projectId}"…`, null, model, provider);
+
+    if (state.abortController) state.abortController.abort();
+    state.abortController = new AbortController();
+
+    try {
+        const res = await fetch("/api/run", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({project_id: projectId, model, provider}),
+            signal: state.abortController.signal,
+        });
+        const data = await res.json();
+
+        if (card) {
+            card.classList.remove("loading");
+            card.classList.add(data.response && !data.response.startsWith("⚠️") ? "done" : "error");
+        }
+
+        showResponse(data.response || "Empty response", data.timing_ms, model, provider);
+
+    } catch (e) {
+        if (e.name === "AbortError") return;
+        if (card) { card.classList.remove("loading"); card.classList.add("error"); }
+        showResponse("Error: " + e.message, null, model, provider);
+    } finally {
+        state.pendingProjectId = null;
+    }
+}
+
+function showResponse(text, timing, model, provider) {
+    const panel = document.getElementById("responsePanel");
+    panel.classList.add("visible");
+
+    document.getElementById("rpTitle").textContent = "Response";
+    document.getElementById("rpTiming").textContent = timing ? `⏱ ${timing}ms` : "";
+    document.getElementById("rpModel").textContent = model ? `${model}` : "";
+    document.getElementById("rpProvider").textContent = provider ? `${provider}` : "";
+
+    const body = document.getElementById("rpBody");
+    body.textContent = text;
+}
+
+function hideResponse() {
+    document.getElementById("responsePanel").classList.remove("visible");
+}
+
+function clearResponse() {
+    document.getElementById("rpBody").textContent = "";
+    document.getElementById("rpTiming").textContent = "";
+    hideResponse();
+    document.querySelectorAll(".card").forEach(c => c.classList.remove("done", "error"));
+}
+
+function copyResponse() {
+    const text = document.getElementById("rpBody").textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = event.target;
+        btn.textContent = "Copied!";
+        setTimeout(() => btn.textContent = "Copy", 1500);
+    }).catch(() => {});
+}
+
+function reRunProject() {
+    if (state.activeProjectId) runProject(state.activeProjectId);
+}
+
+document.addEventListener("DOMContentLoaded", init);
+</script>
+
+</body>
+</html>

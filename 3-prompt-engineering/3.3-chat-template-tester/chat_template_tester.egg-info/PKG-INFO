@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: chat-template-tester
+Version: 0.1.0
+Summary: Test and compare LLM chat templates side-by-side
+Requires-Python: >=3.11
+Requires-Dist: jinja2>=3.1
+Requires-Dist: pydantic>=2.0
+Provides-Extra: test
+Requires-Dist: pytest>=8.0; extra == "test"

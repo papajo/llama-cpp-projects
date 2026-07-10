@@ -1,0 +1,126 @@
+{
+  "meta": {
+    "description": "Perplexity benchmarks for common model families across quantisation types. Values are WikiText-2 test perplexity (lower is better). Source: llama.cpp community benchmarks and published results.",
+    "last_updated": "2025-12-01",
+    "note": "Results vary by calibration data, tokenizer, and context length. Use as approximate reference only."
+  },
+  "models": {
+    "llama-3.1-8b": {
+      "full_name": "Meta-Llama-3.1-8B",
+      "param_count": 8.03,
+      "f16_ppl": 6.23,
+      "quants": {
+        "Q8_0": 6.24,
+        "Q6_K": 6.25,
+        "Q5_K_M": 6.26,
+        "Q5_0": 6.27,
+        "Q4_K_M": 6.29,
+        "Q4_0": 6.35,
+        "Q3_K_M": 6.48,
+        "Q2_K": 6.89,
+        "IQ4_XS": 6.31,
+        "IQ3_S": 6.52,
+        "IQ2_S": 6.95
+      }
+    },
+    "llama-3.1-70b": {
+      "full_name": "Meta-Llama-3.1-70B",
+      "param_count": 70.6,
+      "f16_ppl": 5.32,
+      "quants": {
+        "Q8_0": 5.33,
+        "Q6_K": 5.34,
+        "Q5_K_M": 5.35,
+        "Q4_K_M": 5.38,
+        "Q4_0": 5.44,
+        "Q3_K_M": 5.58,
+        "Q2_K": 6.05
+      }
+    },
+    "llama-3.1-405b": {
+      "full_name": "Meta-Llama-3.1-405B",
+      "param_count": 405.0,
+      "f16_ppl": 4.85,
+      "quants": {
+        "Q8_0": 4.86,
+        "Q6_K": 4.87,
+        "Q5_K_M": 4.88,
+        "Q4_K_M": 4.92,
+        "Q3_K_M": 5.12,
+        "Q2_K": 5.58
+      }
+    },
+    "mistral-7b": {
+      "full_name": "Mistral-7B-v0.3",
+      "param_count": 7.24,
+      "f16_ppl": 5.98,
+      "quants": {
+        "Q8_0": 5.99,
+        "Q6_K": 6.00,
+        "Q5_K_M": 6.01,
+        "Q4_K_M": 6.04,
+        "Q4_0": 6.10,
+        "Q3_K_M": 6.22,
+        "Q2_K": 6.58,
+        "IQ4_XS": 6.06,
+        "IQ3_S": 6.25,
+        "IQ2_S": 6.62
+      }
+    },
+    "qwen-2.5-7b": {
+      "full_name": "Qwen-2.5-7B",
+      "param_count": 7.61,
+      "f16_ppl": 6.05,
+      "quants": {
+        "Q8_0": 6.06,
+        "Q6_K": 6.07,
+        "Q5_K_M": 6.08,
+        "Q4_K_M": 6.11,
+        "Q4_0": 6.17,
+        "Q3_K_M": 6.30,
+        "Q2_K": 6.72
+      }
+    },
+    "qwen-2.5-32b": {
+      "full_name": "Qwen-2.5-32B",
+      "param_count": 32.8,
+      "f16_ppl": 5.45,
+      "quants": {
+        "Q8_0": 5.46,
+        "Q6_K": 5.47,
+        "Q5_K_M": 5.48,
+        "Q4_K_M": 5.52,
+        "Q4_0": 5.58,
+        "Q3_K_M": 5.72,
+        "Q2_K": 6.15
+      }
+    },
+    "gemma-2-9b": {
+      "full_name": "Gemma-2-9B",
+      "param_count": 9.2,
+      "f16_ppl": 6.82,
+      "quants": {
+        "Q8_0": 6.83,
+        "Q6_K": 6.84,
+        "Q5_K_M": 6.85,
+        "Q4_K_M": 6.89,
+        "Q4_0": 6.97,
+        "Q3_K_M": 7.12,
+        "Q2_K": 7.58
+      }
+    },
+    "deepseek-v2-lite": {
+      "full_name": "DeepSeek-V2-Lite (16B MoE)",
+      "param_count": 16.0,
+      "f16_ppl": 6.15,
+      "quants": {
+        "Q8_0": 6.16,
+        "Q6_K": 6.17,
+        "Q5_K_M": 6.18,
+        "Q4_K_M": 6.22,
+        "Q3_K_M": 6.38,
+        "Q2_K": 6.80
+      }
+    }
+  }
+}

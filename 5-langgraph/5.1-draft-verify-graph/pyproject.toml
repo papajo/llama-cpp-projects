@@ -1,0 +1,14 @@
+[project]
+name = "draft-verify-graph"
+version = "0.1.0"
+description = "Draft-verification reflexion loop — generate, critique, improve"
+requires-python = ">=3.10"
+dependencies = [
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "langchain-llamacpp-router"
+version = "0.1.0"
+description = "LangChain RunnableRouter for multi-model llama.cpp router server — tag-based routing with cold-start failover"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["llama.cpp", "langchain", "router", "llm", "multi-model", "failover"]
+authors = [
+    {name = "LangChain llama.cpp Router Contributors"},
+]
+dependencies = [
+    "langchain-core>=0.3.0",
+    "httpx>=0.27",
+    "pydantic>=2.5",
+]
+
+[project.scripts]
+router-demo = "examples.demo_router:main"

@@ -1,0 +1,25 @@
+{
+  "model": "Qwen-2.5-72B",
+  "analysis": {
+    "architecture": {
+      "layers": 80,
+      "q_heads": 64,
+      "kv_heads": 8,
+      "gqa_ratio": "8:1",
+      "head_dim": 128,
+      "hidden_dim": 8192,
+      "max_context": 32768
+    },
+    "findings": {
+      "kv_f16_at_full_ctx": "40.00 GB — requires enterprise GPU (A100 80 GB or multi-GPU)",
+      "kv_q8_0_at_full_ctx": "20.00 GB — fits on A100-40GB alongside quantized weights",
+      "kv_q4_0_at_full_ctx": "10.00 GB — feasible on 48 GB workstation GPUs",
+      "per_layer_f16": "512 MiB per layer — 80 layers × 512 MiB = 40 GB"
+    },
+    "recommendations": {
+      "datacenter_gpu": "Use --cache-type-k f16 on A100-80GB for quality",
+      "workstation_gpu": "Use --cache-type-k q8_0 on 48 GB GPUs",
+      "consumer_gpu": "Use --cache-type-k q4_0 with --ctx limited to 16K"
+    }
+  }
+}

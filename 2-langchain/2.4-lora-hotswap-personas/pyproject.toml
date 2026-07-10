@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llamacpp-lora-personas"
+version = "0.1.0"
+description = "LangChain agent with LoRA-adapter hot-swap — switch personalities mid-conversation without reloading the base model"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["llama.cpp", "lora", "adapter", "langchain", "agent", "persona", "hotswap"]
+authors = [
+    {name = "llamacpp LoRA Personas Contributors"},
+]
+dependencies = [
+    "langchain-core>=0.3.0",
+    "httpx>=0.27",
+    "pydantic>=2.5",
+]

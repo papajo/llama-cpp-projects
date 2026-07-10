@@ -1,0 +1,35 @@
+{
+  "type": "object",
+  "properties": {
+    "to": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$" },
+      "minItems": 1,
+      "maxItems": 10
+    },
+    "cc": {
+      "type": "array",
+      "items": { "type": "string" },
+      "maxItems": 10
+    },
+    "subject": { "type": "string" },
+    "body": { "type": "string" },
+    "priority": {
+      "type": "string",
+      "enum": ["low", "normal", "high", "urgent"]
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "filename": { "type": "string" },
+          "mime_type": { "type": "string" },
+          "size_bytes": { "type": "integer", "minimum": 0 }
+        },
+        "required": ["filename"]
+      }
+    }
+  },
+  "required": ["to", "subject", "body"]
+}

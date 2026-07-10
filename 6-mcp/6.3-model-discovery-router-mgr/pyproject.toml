@@ -1,0 +1,15 @@
+[project]
+name = "model-router"
+version = "0.1.0"
+description = "MCP server for model discovery, info, and request routing"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prompt Chain Workbench</title>
+<style>
+:root {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --surface2: #1f3056;
+  --border: #2a3f6a;
+  --text: #e0e0e0;
+  --text-dim: #8899aa;
+  --accent: #4fc3f7;
+  --accent2: #81c784;
+  --red: #ef5350;
+  --orange: #ffa726;
+  --font: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --radius: 6px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  min-height: 100vh;
+}
+.header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.header h1 { font-size: 18px; font-weight: 600; margin-right: auto; }
+.header .subtitle { color: var(--text-dim); font-size: 13px; }
+.btn {
+  background: var(--surface2); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 6px 14px; cursor: pointer; font-size: 13px;
+  transition: all .15s;
+}
+.btn:hover { background: var(--border); }
+.btn-primary { background: #1565c0; border-color: #1976d2; color: #fff; }
+.btn-primary:hover { background: #1976d2; }
+.btn-danger { background: #b71c1c; border-color: #c62828; color: #fff; }
+.btn-danger:hover { background: #c62828; }
+.btn-success { background: #2e7d32; border-color: #388e3c; color: #fff; }
+.btn-success:hover { background: #388e3c; }
+.btn-sm { padding: 3px 10px; font-size: 12px; }
+input, textarea, select {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 6px 10px; font-size: 13px; font-family: var(--font);
+  outline: none; width: 100%;
+}
+input:focus, textarea:focus, select:focus { border-color: var(--accent); }
+textarea { resize: vertical; min-height: 60px; }
+select { cursor: pointer; }
+label { font-size: 12px; color: var(--text-dim); display: block; margin-bottom: 3px; }
+.main { display: grid; grid-template-columns: 1fr 1fr; gap: 0; height: calc(100vh - 56px); }
+@media (max-width: 900px) { .main { grid-template-columns: 1fr; } }
+.panel {
+  overflow-y: auto; padding: 16px;
+}
+.panel-left { border-right: 1px solid var(--border); }
+.section { margin-bottom: 20px; }
+.section-title {
+  font-size: 13px; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .05em; color: var(--accent); margin-bottom: 10px;
+  display: flex; align-items: center; gap: 8px;
+}
+.server-bar {
+  display: flex; gap: 8px; align-items: end; flex-wrap: wrap;
+}
+.server-bar .field { flex: 1; min-width: 140px; }
+.step-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px; margin-bottom: 8px;
+  position: relative;
+}
+.step-card:hover { border-color: var(--accent); }
+.step-header {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+.step-number {
+  background: var(--accent); color: #000; border-radius: 50%;
+  width: 22px; height: 22px; display: flex; align-items: center;
+  justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0;
+}
+.step-name-input { flex: 1; font-weight: 600; }
+.step-controls { display: flex; gap: 4px; }
+.step-fields { display: grid; gap: 8px; }
+.step-field-row { display: flex; gap: 8px; }
+.step-field-row .field { flex: 1; }
+.variable-hint {
+  font-size: 11px; color: var(--text-dim);
+  background: var(--surface2); padding: 2px 8px; border-radius: 3px;
+  display: inline-block; margin-bottom: 4px;
+}
+.variable-hint code { color: var(--accent2); }
+.empty-state {
+  text-align: center; padding: 40px 20px; color: var(--text-dim);
+}
+.empty-state .icon { font-size: 40px; margin-bottom: 10px; }
+#result-area { white-space: pre-wrap; font-family: var(--font); font-size: 13px; }
+.step-output {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 12px; margin-bottom: 12px;
+}
+.step-output-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px; cursor: pointer;
+}
+.step-output-header .label { font-weight: 600; font-size: 14px; }
+.step-output-header .meta { color: var(--text-dim); font-size: 12px; }
+.step-output-body {
+  white-space: pre-wrap; font-family: var(--font); font-size: 13px;
+  line-height: 1.5; overflow-x: auto;
+}
+.step-output-body.collapsed { display: none; }
+.step-error { color: var(--red); }
+.loading { display: inline-block; width: 14px; height: 14px;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: spin .6s linear infinite;
+  vertical-align: middle; margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+  margin-right: 6px;
+}
+.status-ok { background: var(--accent2); }
+.status-error { background: var(--red); }
+.status-running { background: var(--orange); animation: pulse .8s ease-in-out infinite; }
+@keyframes pulse { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
+.chip {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  font-size: 11px; background: var(--surface2); color: var(--text-dim);
+}
+.chip-accent { background: #1565c0; color: #fff; }
+.toolbar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.import-export { display: flex; gap: 6px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⛓️ Prompt Chain Workbench</h1>
+  <span class="subtitle">Design · Run · Compare</span>
+  <div class="import-export">
+    <button class="btn btn-sm" onclick="exportChain()">📤 Export</button>
+    <button class="btn btn-sm" onclick="document.getElementById('import-file').click()">📥 Import</button>
+    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importChain(event)">
+  </div>
+  <button class="btn btn-sm" onclick="loadFromHash()">🔗 From URL</button>
+</div>
+
+<div class="main">
+  <!-- Left Panel: Builder -->
+  <div class="panel panel-left">
+    <!-- Server Config -->
+    <div class="section">
+      <div class="section-title">🔌 Server</div>
+      <div class="server-bar">
+        <div class="field">
+          <label>Base URL</label>
+          <input id="server-url" value="http://localhost:8080" placeholder="http://localhost:8080">
+        </div>
+        <div style="font-size:11px;color:var(--orange);width:100%;margin-top:4px;">
+          ⚠️ Start llama-server with <code>--cors *</code> to allow cross-origin requests.
+          Example: <code>llama-server --model &lt;model&gt; --cors * --port 8080</code>
+        </div>
+        <div class="field" style="flex:0.5">
+          <label>Default Temp</label>
+          <input id="chain-temp" type="number" step="0.1" min="0" max="2" value="0.7">
+        </div>
+        <div class="field" style="flex:0.5">
+          <label>Max Tokens</label>
+          <input id="chain-max-tokens" type="number" step="1" min="1" value="512">
+        </div>
+      </div>
+    </div>
+
+    <!-- Chain Builder -->
+    <div class="section">
+      <div class="section-title">
+        🧩 Chain
+        <span id="step-count" class="chip">0 steps</span>
+      </div>
+      <div class="toolbar">
+        <select id="template-select" onchange="loadTemplate(this.value); this.value=''">
+          <option value="">— Load template —</option>
+          <option value="summarize-and-translate">Summarize + Translate</option>
+          <option value="brainstorm-critique-refine">Brainstorm → Critique → Refine</option>
+          <option value="expand-and-polish">Expand + Polish</option>
+          <option value="question-decomposition">Question Decomposition</option>
+          <option value="fact-check">Fact Check Pipeline</option>
+          <option value="chain-of-thought">Chain of Thought</option>
+        </select>
+        <button class="btn btn-sm btn-primary" onclick="addStep()">+ Add Step</button>
+        <button class="btn btn-sm" onclick="clearAll()">🗑 Clear</button>
+      </div>
+      <div id="steps-container"></div>
+    </div>
+
+    <!-- Input + Run -->
+    <div class="section">
+      <div class="section-title">📝 Input</div>
+      <textarea id="chain-input" rows="3" placeholder="Enter input text for the chain...">Explain the concept of recursion to a 10-year-old.</textarea>
+      <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+        <button class="btn btn-success" onclick="runChain()" id="run-btn">▶ Run Chain</button>
+        <button class="btn btn-danger" onclick="cancelChain()" id="cancel-btn" style="display:none">⏹ Cancel</button>
+        <span id="run-status" style="font-size:12px; color:var(--text-dim);"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Panel: Results -->
+  <div class="panel" id="results-panel">
+    <div class="section">
+      <div class="section-title">📊 Results</div>
+      <div id="result-area">
+        <div class="empty-state">
+          <div class="icon">⚡</div>
+          <p>Build a chain and click <strong>Run</strong> to see results.</p>
+          <p style="margin-top:8px; font-size:12px;">
+            Use <code>{{input}}</code> and <code>{{step_1}}</code>, <code>{{step_name}}</code> 
+            in your prompts to reference prior outputs.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Chain Templates (embedded from Python) ──────────────────────
+
+const CHAIN_TEMPLATES = {
+  "summarize-and-translate": {
+    "name": "summarize-and-translate",
+    "description": "Summarise input text, then translate to French.",
+    "temperature": 0.3,
+    "max_tokens": 512,
+    "steps": [
+      {"name": "summarise", "user_prompt": "Summarise the following:\n\n{{input}}", "system_prompt": "You are a precise summariser. Extract the key points concisely.", "temperature": 0.2, "max_tokens": 512},
+      {"name": "translate", "user_prompt": "Translate this to French:\n\n{{step_1}}", "system_prompt": "You are a professional translator. Translate accurately.", "temperature": null, "max_tokens": null}
+    ]
+  },
+  "brainstorm-critique-refine": {
+    "name": "brainstorm-critique-refine",
+    "description": "Generate ideas, critique, then refine.",
+    "temperature": 0.8,
+    "max_tokens": 1024,
+    "steps": [
+      {"name": "brainstorm", "user_prompt": "Generate creative ideas about:\n\n{{input}}", "system_prompt": "You are a creative ideator. Think broadly and generate diverse ideas.", "temperature": 0.9, "max_tokens": 512},
+      {"name": "critique", "user_prompt": "Critically analyse these ideas. Point out flaws and areas for improvement:\n\n{{step_1}}", "system_prompt": "You are a critical reviewer. Identify weaknesses, gaps, and risks.", "temperature": 0.3, "max_tokens": 512},
+      {"name": "refine", "user_prompt": "Given the original ideas and the critique, produce a refined and improved version:\n\nOriginal ideas:\n{{step_1}}\n\nCritique:\n{{step_2}}", "system_prompt": "You are a skilled synthesizer. Incorporate feedback to produce a stronger result.", "temperature": 0.5, "max_tokens": 1024}
+    ]
+  },
+  "expand-and-polish": {
+    "name": "expand-and-polish",
+    "description": "Expand outline into text, then polish prose.",
+    "temperature": 0.5,
+    "max_tokens": 2048,
+    "steps": [
+      {"name": "expand", "user_prompt": "Expand this outline into full paragraphs:\n\n{{input}}", "system_prompt": "You are an expert writer. Expand the given outline into well-structured, detailed prose.", "temperature": 0.6, "max_tokens": 1536},
+      {"name": "polish", "user_prompt": "Polish this text for clarity and style:\n\n{{step_1}}", "system_prompt": "You are a meticulous editor. Improve clarity, flow, and word choice.", "temperature": 0.3, "max_tokens": 1536}
+    ]
+  },
+  "question-decomposition": {
+    "name": "question-decomposition",
+    "description": "Decompose question → answer sub-questions → synthesise.",
+    "temperature": 0.3,
+    "max_tokens": 512,
+    "steps": [
+      {"name": "decompose", "user_prompt": "Break this question into 2-3 simpler sub-questions that would help answer it:\n\n{{input}}", "system_prompt": "You are an analytical thinker. Break complex questions into simpler sub-questions.", "temperature": 0.3, "max_tokens": 256},
+      {"name": "answer_1", "user_prompt": "Answer sub-question 1 from this decomposition:\n\n{{step_1}}\n\nFocus on accuracy and brevity.", "system_prompt": "You are a knowledgeable assistant. Answer the question clearly and concisely.", "temperature": 0.2, "max_tokens": 512},
+      {"name": "answer_2", "user_prompt": "Answer sub-question 2 from this decomposition:\n\n{{step_1}}\n\nFocus on accuracy and brevity.", "system_prompt": "You are a knowledgeable assistant. Answer the question clearly and concisely.", "temperature": 0.2, "max_tokens": 512},
+      {"name": "synthesise", "user_prompt": "Combine these partial answers into a final, comprehensive response to the original question:\n\nOriginal question: {{input}}\n\nSub-question answers:\n{{step_2}}\n\n{{step_3}}", "system_prompt": "You are a skilled synthesizer. Combine partial answers into a comprehensive response.", "temperature": 0.3, "max_tokens": 1024}
+    ]
+  },
+  "fact-check": {
+    "name": "fact-check",
+    "description": "Generate claim → evidence → confidence rating.",
+    "temperature": 0.2,
+    "max_tokens": 512,
+    "steps": [
+      {"name": "generate-claim", "user_prompt": "Based on this topic, state one specific factual claim:\n\n{{input}}", "system_prompt": "You are a fact-checker. State a clear, specific factual claim.", "temperature": 0.3, "max_tokens": 200},
+      {"name": "evidence", "user_prompt": "For this claim, list supporting and refuting evidence:\n\nClaim: {{step_1}}", "system_prompt": "You are a research assistant. List evidence for and against the claim.", "temperature": 0.2, "max_tokens": 512},
+      {"name": "rate", "user_prompt": "Based on the claim and evidence, assign a confidence score (HIGH/MEDIUM/LOW) and explain your reasoning:\n\nClaim: {{step_1}}\n\nEvidence:\n{{step_2}}", "system_prompt": "You are a confidence assessor. Rate claim confidence based on available evidence.", "temperature": 0.2, "max_tokens": 256}
+    ]
+  },
+  "chain-of-thought": {
+    "name": "chain-of-thought",
+    "description": "Reason step-by-step, then give final answer.",
+    "temperature": 0.3,
+    "max_tokens": 512,
+    "steps": [
+      {"name": "reason", "user_prompt": "Work through this problem step by step:\n\n{{input}}", "system_prompt": "You are a careful reasoner. Think step by step.", "temperature": 0.3, "max_tokens": 1024},
+      {"name": "answer", "user_prompt": "Based on this reasoning, provide a final answer:\n\n{{step_1}}", "system_prompt": "You are a precise answerer. Give a clear, concise final answer.", "temperature": 0.1, "max_tokens": 512}
+    ]
+  }
+};
+
+// ── State ────────────────────────────────────────────────────────
+
+let steps = [];
+let abortController = null;
+let stepIdCounter = 0;
+
+// ── Render Steps ─────────────────────────────────────────────────
+
+function renderSteps() {
+  const container = document.getElementById('steps-container');
+  if (steps.length === 0) {
+    container.innerHTML = `<div class="empty-state"><div class="icon">🧩</div><p>No steps yet. Add one or load a template.</p></div>`;
+    document.getElementById('step-count').textContent = '0 steps';
+    return;
+  }
+  let html = '';
+  steps.forEach((s, i) => {
+    html += `
+      <div class="step-card" data-id="${s.id}">
+        <div class="step-header">
+          <span class="step-number">${i + 1}</span>
+          <input class="step-name-input" value="${escHtml(s.name)}"
+                 placeholder="Step name" onchange="setStep(${s.id}, 'name', this.value)">
+          <div class="step-controls">
+            <button class="btn btn-sm" onclick="moveStep(${s.id}, -1)" ${i === 0 ? 'disabled style="opacity:0.3"' : ''}>↑</button>
+            <button class="btn btn-sm" onclick="moveStep(${s.id}, 1)" ${i === steps.length - 1 ? 'disabled style="opacity:0.3"' : ''}>↓</button>
+            <button class="btn btn-sm btn-danger" onclick="removeStep(${s.id})">✕</button>
+          </div>
+        </div>
+        <div class="step-fields">
+          <div>
+            <label>System prompt <span class="variable-hint"><code>{{input}}</code> <code>{{step_N}}</code></span></label>
+            <textarea rows="2" placeholder="Optional system prompt" onchange="setStep(${s.id}, 'system_prompt', this.value)">${escHtml(s.system_prompt)}</textarea>
+          </div>
+          <div>
+            <label>User prompt</label>
+            <textarea rows="2" placeholder="User prompt with {{input}}, {{step_1}}, etc." onchange="setStep(${s.id}, 'user_prompt', this.value)">${escHtml(s.user_prompt)}</textarea>
+          </div>
+          <div class="step-field-row">
+            <div class="field">
+              <label>Temperature</label>
+              <input type="number" step="0.1" min="0" max="2"
+                     value="${s.temperature !== null && s.temperature !== undefined ? s.temperature : ''}"
+                     placeholder="Default"
+                     onchange="setStep(${s.id}, 'temperature', this.value === '' ? null : parseFloat(this.value))">
+            </div>
+            <div class="field">
+              <label>Max tokens</label>
+              <input type="number" step="1" min="1"
+                     value="${s.max_tokens !== null && s.max_tokens !== undefined ? s.max_tokens : ''}"
+                     placeholder="Default"
+                     onchange="setStep(${s.id}, 'max_tokens', this.value === '' ? null : parseInt(this.value))">
+            </div>
+          </div>
+        </div>
+      </div>`;
+  });
+  container.innerHTML = html;
+  document.getElementById('step-count').textContent = `${steps.length} step${steps.length !== 1 ? 's' : ''}`;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function addStep(name, sys, user, temp, mt) {
+  const id = ++stepIdCounter;
+  steps.push({
+    id,
+    name: name || `step_${steps.length + 1}`,
+    system_prompt: sys || '',
+    user_prompt: user || '{{input}}',
+    temperature: temp !== undefined ? temp : null,
+    max_tokens: mt !== undefined ? mt : null,
+  });
+  renderSteps();
+}
+
+function removeStep(id) {
+  steps = steps.filter(s => s.id !== id);
+  renderSteps();
+}
+
+function moveStep(id, dir) {
+  const idx = steps.findIndex(s => s.id === id);
+  if (idx < 0) return;
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= steps.length) return;
+  [steps[idx], steps[newIdx]] = [steps[newIdx], steps[idx]];
+  renderSteps();
+}
+
+function setStep(id, field, value) {
+  const s = steps.find(x => x.id === id);
+  if (s) s[field] = value;
+}
+
+function clearAll() {
+  if (steps.length > 0 && !confirm('Clear all steps?')) return;
+  steps = [];
+  renderSteps();
+  document.getElementById('result-area').innerHTML = `<div class="empty-state"><div class="icon">⚡</div><p>Build a chain and click <strong>Run</strong> to see results.</p></div>`;
+}
+
+// ── Chain State ──────────────────────────────────────────────────
+
+function getChainData() {
+  return {
+    name: 'custom-chain',
+    description: 'Custom chain from workbench',
+    temperature: parseFloat(document.getElementById('chain-temp').value) || 0.7,
+    max_tokens: parseInt(document.getElementById('chain-max-tokens').value) || 512,
+    steps: steps.map(s => ({
+      name: s.name,
+      user_prompt: s.user_prompt,
+      system_prompt: s.system_prompt,
+      temperature: s.temperature,
+      max_tokens: s.max_tokens,
+    })),
+  };
+}
+
+function loadChainData(data) {
+  document.getElementById('chain-temp').value = data.temperature ?? 0.7;
+  document.getElementById('chain-max-tokens').value = data.max_tokens ?? 512;
+  steps = [];
+  stepIdCounter = 0;
+  (data.steps || []).forEach(s => {
+    addStep(s.name, s.system_prompt, s.user_prompt, s.temperature, s.max_tokens);
+  });
+}
+
+// ── Templates ────────────────────────────────────────────────────
+
+function loadTemplate(name) {
+  if (!name || !CHAIN_TEMPLATES[name]) return;
+  const data = JSON.parse(JSON.stringify(CHAIN_TEMPLATES[name])); // deep clone
+  loadChainData(data);
+}
+
+// ── Import / Export ──────────────────────────────────────────────
+
+function exportChain() {
+  const data = getChainData();
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `chain-${data.name}-${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function importChain(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!data.steps || !Array.isArray(data.steps)) {
+        alert('Invalid chain file: missing "steps" array');
+        return;
+      }
+      loadChainData(data);
+    } catch (err) {
+      alert(`Import error: ${err.message}`);
+    }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function loadFromHash() {
+  const hash = location.hash.slice(1);
+  if (!hash) { alert('No chain data in URL hash'); return; }
+  try {
+    const raw = atob(decodeURIComponent(hash));
+    const data = JSON.parse(raw);
+    if (!data.steps) { alert('Invalid chain data in URL'); return; }
+    loadChainData(data);
+  } catch (e) {
+    alert(`Failed to parse URL chain: ${e.message}`);
+  }
+}
+
+// ── Run Chain ────────────────────────────────────────────────────
+
+async function runChain() {
+  if (steps.length === 0) { alert('Add at least one step first.'); return; }
+
+  const baseUrl = document.getElementById('server-url').value.replace(/\/+$/, '');
+  const inputText = document.getElementById('chain-input').value;
+  const chainData = getChainData();
+
+  // Build results UI
+  const resultArea = document.getElementById('result-area');
+  let resultsHtml = `<div class="section-title" style="margin-bottom:12px">⛓️ Running: ${escHtml(chainData.name)}</div>`;
+  resultsHtml += `<div style="font-size:12px; color:var(--text-dim); margin-bottom:12px;">Input: <code>${escHtml(inputText)}</code></div>`;
+  // Output containers for each step
+  const stepOutputs = [];
+  chainData.steps.forEach((s, i) => {
+    const divId = `step-out-${i}`;
+    stepOutputs.push(divId);
+    resultsHtml += `<div class="step-output">
+      <div class="step-output-header">
+        <span class="label"><span class="status-dot status-running"></span> Step ${i + 1}: ${escHtml(s.name)}</span>
+        <span class="meta" id="${divId}-meta">running…</span>
+      </div>
+      <div class="step-output-body" id="${divId}">
+        <span class="loading"></span> Waiting for response…
+      </div>
+    </div>`;
+  });
+  resultArea.innerHTML = resultsHtml;
+
+  // Run
+  const runBtn = document.getElementById('run-btn');
+  const cancelBtn = document.getElementById('cancel-btn');
+  const statusEl = document.getElementById('run-status');
+  runBtn.disabled = true;
+  cancelBtn.style.display = 'inline-block';
+  statusEl.textContent = 'Running…';
+
+  abortController = new AbortController();
+  const signal = abortController.signal;
+
+  const context = {input: inputText};
+  let ok = true;
+
+  try {
+    for (let i = 0; i < chainData.steps.length; i++) {
+      if (signal.aborted) break;
+
+      const s = chainData.steps[i];
+      const divId = stepOutputs[i];
+
+      // Render prompt
+      const sysPrompt = resolveTemplate(s.system_prompt || '', context);
+      const userPrompt = resolveTemplate(s.user_prompt, context);
+      const messages = [];
+      if (sysPrompt) messages.push({role: 'system', content: sysPrompt});
+      messages.push({role: 'user', content: userPrompt});
+
+      const temp = s.temperature ?? chainData.temperature;
+      const mt = s.max_tokens ?? chainData.max_tokens;
+
+      document.getElementById(divId + '-meta').textContent = `temp=${temp}, max=${mt}`;
+
+      // Show rendered prompts on click
+      const bodyEl = document.getElementById(divId);
+      bodyEl.innerHTML = `<span class="loading"></span> Sending request (${messages.length} message(s))…`;
+      bodyEl.classList.remove('collapsed');
+
+      // Call API
+      const startTime = performance.now();
+      let lastError = null;
+      let response, data;
+
+      for (let attempt = 0; attempt <= 2; attempt++) {
+        if (signal.aborted) break;
+        try {
+          const resp = await fetch(`${baseUrl}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              messages,
+              temperature: temp,
+              max_tokens: mt,
+              stream: false,
+            }),
+            signal,
+          });
+          if (resp.status >= 500 && attempt < 2) {
+            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+            continue;
+          }
+          if (!resp.ok) {
+            const errText = await resp.text().catch(() => '');
+            lastError = `HTTP ${resp.status}: ${errText.slice(0, 200)}`;
+            break;
+          }
+          data = await resp.json();
+          response = resp;
+          break;
+        } catch (err) {
+          if (err.name === 'AbortError') { throw err; }
+          lastError = err.message;
+          if (attempt < 2) {
+            await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+          }
+        }
+      }
+
+      const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+
+      if (signal.aborted) {
+        document.getElementById(divId).textContent = '⏹ Cancelled';
+        document.getElementById(divId + '-meta').textContent = 'cancelled';
+        ok = false;
+        break;
+      }
+
+      if (data && data.choices && data.choices[0]) {
+        const output = data.choices[0].message?.content || '';
+        const usage = data.usage || {};
+        context[`step_${i + 1}`] = output;
+        context[s.name] = output;
+
+        document.getElementById(divId).innerHTML = `<pre style="white-space:pre-wrap;margin:0">${escHtml(output)}</pre>`;
+        document.getElementById(divId + '-meta').innerHTML =
+          `<span class="status-dot status-ok"></span> ${elapsed}s · ${usage.completion_tokens || '?'} tokens`;
+
+        // Show rendered prompts as tooltip
+        const header = document.querySelector(`#${CSS.escape(divId)}`).parentElement.querySelector('.step-output-header');
+        const renderedDetail = escHtml(
+          (sysPrompt ? `[SYSTEM]\n${sysPrompt}\n\n` : '') +
+          `[USER]\n${userPrompt}`
+        );
+        header.title = `Rendered prompts:\n${sysPrompt ? `SYSTEM: ${sysPrompt}\n\n` : ''}USER: ${userPrompt}`;
+        header.style.cursor = 'pointer';
+        header.onclick = () => {
+          alert(`Rendered prompts for "${s.name}":\n\n${sysPrompt ? `SYSTEM:\n${sysPrompt}\n\n` : ''}USER:\n${userPrompt}`);
+        };
+      } else {
+        document.getElementById(divId).innerHTML =
+          `<span class="step-error">❌ ${escHtml(lastError || 'Unknown error')}</span>`;
+        document.getElementById(divId + '-meta').innerHTML =
+          `<span class="status-dot status-error"></span> ${elapsed}s`;
+        if (lastError && (lastError.includes('Failed to fetch') || lastError.includes('NetworkError'))) {
+          document.getElementById(divId).innerHTML +=
+            `<div style="margin-top:8px;font-size:12px;color:var(--orange);">
+              💡 <b>CORS or connection issue.</b> Make sure:<br>
+              &nbsp;1. llama-server is running at <code>${escHtml(baseUrl)}</code><br>
+              &nbsp;2. Started with <code>--cors *</code> (required when using the workbench from a web browser)<br>
+              &nbsp;3. The port is correct and not blocked by a firewall<br>
+              Example: <code>llama-server --model mymodel.gguf --cors * --port 8080</code>
+            </div>`;
+        }
+        if (!signal.aborted) {
+          ok = false;
+          if (true) break; // stop_on_error
+        }
+      }
+    }
+  } catch (err) {
+    if (err.name !== 'AbortError') {
+      resultArea.innerHTML += `<div class="step-error">❌ Chain error: ${escHtml(err.message)}</div>`;
+    }
+  }
+
+  // Final status
+  if (signal.aborted) {
+    statusEl.textContent = '⏹ Cancelled';
+  } else if (ok) {
+    statusEl.textContent = '✅ Complete';
+    // Show final output summary
+    const lastOk = context[`step_${chainData.steps.length}`] || context[chainData.steps[chainData.steps.length - 1]?.name];
+    if (lastOk) {
+      resultArea.innerHTML += `<div style="margin-top:16px;padding:12px;background:var(--surface2);border-radius:var(--radius);border-left:3px solid var(--accent2);">
+        <strong>Final output</strong> (${lastOk.length} chars):<br>
+        <pre style="white-space:pre-wrap;margin:8px 0 0;font-size:13px;">${escHtml(lastOk.slice(0, 500))}${lastOk.length > 500 ? '…' : ''}</pre>
+      </div>`;
+    }
+  } else {
+    statusEl.textContent = '❌ Failed (see above)';
+  }
+
+  runBtn.disabled = false;
+  cancelBtn.style.display = 'none';
+  abortController = null;
+}
+
+function cancelChain() {
+  if (abortController) {
+    abortController.abort();
+    document.getElementById('run-status').textContent = 'Cancelling…';
+  }
+}
+
+// ── Template helpers ─────────────────────────────────────────────
+
+function resolveTemplate(text, context) {
+  return text.replace(/\{\{(\w+(?:\.\w+)?)\}\}/g, (match, key) => {
+    if (context[key] !== undefined) return context[key];
+    if (key.includes('.')) {
+      const base = key.split('.')[0];
+      if (context[base] !== undefined) return context[base];
+    }
+    return match;
+  });
+}
+
+// ── Init ─────────────────────────────────────────────────────────
+
+// Load from URL hash on page load
+if (location.hash.length > 1) {
+  loadFromHash();
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llamacpp-grammar-output"
+version = "0.1.0"
+description = "LangChain structured-output chain using llama.cpp JSON-schema grammar constraints — zero-retry guaranteed schema conformance"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+keywords = ["llama.cpp", "langchain", "grammar", "json-schema", "structured-output", "pydantic"]
+authors = [
+    {name = "llamacpp Grammar Output Contributors"},
+]
+dependencies = [
+    "langchain-core>=0.3.0",
+    "httpx>=0.27",
+    "pydantic>=2.5",
+]
+
+[project.scripts]
+benchmark-grammar = "benchmark_vs_native_langchain.benchmark:main"

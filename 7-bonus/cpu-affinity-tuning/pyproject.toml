@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=75.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "cpu-affinity-tuning"
+version = "0.1.0"
+description = "CPU topology detection and pinning strategies for llama.cpp"
+requires-python = ">=3.10"
+dependencies = [
+    "psutil>=5.9",
+]
+optional-dependencies = { test = ["pytest>=8"] }
+
+[tool.setuptools.packages.find]
+where = ["."]

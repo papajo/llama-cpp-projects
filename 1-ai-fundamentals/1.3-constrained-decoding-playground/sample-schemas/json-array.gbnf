@@ -1,0 +1,6 @@
+# A GBNF grammar for a simple JSON array of strings
+root ::= "[" " " ws-values " " "]"
+ws-values ::= value ( "," " " value )*
+value ::= string
+string ::= "\"" chars "\""
+chars ::= [^"\\] | "\\" . chars

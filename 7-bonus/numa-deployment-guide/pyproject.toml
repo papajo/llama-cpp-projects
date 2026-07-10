@@ -1,0 +1,14 @@
+[build-system]
+requires = ["setuptools>=75.0", "setuptools-scm>=8.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "numa-deployment-guide"
+version = "0.1.0"
+description = "NUMA-aware deployment planning for llama.cpp"
+requires-python = ">=3.10"
+dependencies = []
+optional-dependencies = { test = ["pytest>=8"] }
+
+[tool.setuptools.packages.find]
+where = ["."]

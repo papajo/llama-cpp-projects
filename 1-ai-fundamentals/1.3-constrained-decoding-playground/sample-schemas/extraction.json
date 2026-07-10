@@ -1,0 +1,30 @@
+{
+  "type": "object",
+  "properties": {
+    "entities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["person", "organization", "location", "date", "product", "event"]
+          },
+          "mentions": {
+            "type": "array",
+            "items": { "type": "string" },
+            "minItems": 1
+          }
+        },
+        "required": ["name", "type"]
+      }
+    },
+    "summary": { "type": "string" },
+    "language": {
+      "type": "string",
+      "enum": ["en", "fr", "de", "es", "it", "pt", "ja", "zh", "ko", "ar", "ru", "other"]
+    }
+  },
+  "required": ["entities", "summary"]
+}
