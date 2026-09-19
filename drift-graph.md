@@ -301,3 +301,68 @@ serialises but tolerates a loaded CPU. With a fan-out above the slot count that
 assertion would flake, since queued requests serialise for reasons that have
 nothing to do with the code under test. 5.8 uses the embed server for its wider
 fan-outs because embeddings are far cheaper on CPU than generation.
+
+---
+
+# Real bugs found
+
+Project code that was wrong against reality, not mock drift. All fixed.
+
+| # | Project | Bug | Fixed in |
+|---|---------|-----|----------|
+| 11 | 6.4-enterprise-mcp-gateway | Auth bypass: missing token skipped authentication | `gateway/core.py` `check_request()` |
+| 5 | 6.3-model-discovery-router-mgr | `context_length` never populated from `meta.n_ctx` | `model_router/registry.py` `from_openai_response()` |
+| 6 | 6.3-model-discovery-router-mgr | `server._registry` cache leaked across offline tests | `tests/test_server.py` |
+
+## 11. 6.4-enterprise-mcp-gateway — auth bypass on an empty token
+
+**Classification: real bug (auth bypass) — project code fixed.**
+
+**Test:** `tests/test_gateway.py::TestEnterpriseGateway::test_require_auth_denies_empty_token`
+and the four siblings around it.
+
+**What the mock asserted:** nothing — and that is the whole point. Every offline
+test either set `require_auth=False` or passed a non-empty token
+(`test_auth_failure` used `token="sk-invalid"`). The one combination that
+mattered, `require_auth=True` with no token, was never exercised.
+
+**What the code actually did:**
+```python
+if self.config.require_auth and token:   # <-- `and token`
+    allowed, reason = self.config.auth_provider.authenticate(token, tool_name)
+```
+Gating the block on `and token` meant an empty token skipped authentication
+entirely. Measured against the pre-fix code with `require_auth=True`:
+
+| credential presented | result before fix |
+|---|---|
+| valid token | allowed (200) |
+| **no token at all** | **allowed (200)** |
+| wrong token | denied (401) |
+
+So presenting *no* credential was safer than presenting a wrong one — inverted
+logic, and an unauthenticated caller reached the wrapped tool. It was worse than
+a silent bypass: the request was recorded in the audit log as **allowed**, so
+nothing in the trail flagged it. `total_denied` stayed 0 for the bypassed call.
+
+This is not server drift — no llama-server behaviour is involved. It was
+invisible to the live layer too, because the gateway is a pure policy layer and
+no live test could reach the branch either. It surfaced from reading
+`check_request` while writing the live gateway tests.
+
+**Cause:** the `and token` short-circuit, most likely intended as "only
+authenticate when a token was supplied" — reasonable for an optional-auth
+gateway, wrong when `require_auth` is the flag that makes auth mandatory.
+
+**Fixed:** `check_request()` now denies a missing or empty token with
+`401 "Missing authentication token"` and records the denial through the same
+`audit_log.record(..., False, reason)` path as any other auth failure.
+`require_auth=False` is untouched and remains an open passthrough. No other
+policy semantics changed — rate limiting, validation, audit and `wrap_handler`
+are as they were.
+
+**Note for anyone adopting this:** the default `GatewayConfig` pairs
+`require_auth=True` with `AllowAllAuthProvider`. After the fix a tokenless call
+against that default is denied, which is the intended posture —
+`AllowAllAuthProvider` governs *which* token is acceptable, not whether one is
+required. All 26 pre-existing offline tests still pass unchanged.
