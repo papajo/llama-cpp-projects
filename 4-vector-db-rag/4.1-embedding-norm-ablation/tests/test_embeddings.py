@@ -72,8 +72,14 @@ class TestNormStats:
 
 class TestEmbeddingClient:
     def test_embed_success(self):
+        # Envelope mirrors a real llama-server /v1/embeddings response: each
+        # row carries index/object, and usage has no completion_tokens.
         mock_response = {
-            "data": [{"embedding": [0.1, 0.2, 0.3]}]
+            "model": "nomic-embed-text-v1.5",
+            "object": "list",
+            "usage": {"prompt_tokens": 3, "total_tokens": 3},
+            "data": [{"index": 0, "object": "embedding",
+                      "embedding": [0.1, 0.2, 0.3]}],
         }
         with patch("urllib.request.urlopen") as mock_urlopen:
             mock_cm = MagicMock()

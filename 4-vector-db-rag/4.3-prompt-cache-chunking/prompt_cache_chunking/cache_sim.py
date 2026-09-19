@@ -65,13 +65,20 @@ def simulate_cache(
     cached_tokens = 0
     details: List[dict] = []
 
-    # Track which (start_of_chunk_sequence) prefixes we've seen.
-    # For simplicity: the prefix up to the start of each chunk.
-    # We track unique strings that represent the prefix of the prompt
-    # before each chunk.
+    # Every prompt prefix we have already paid to compute. Two kinds go in
+    # here: the "system|query" prefix (so a repeated query is a hit) and the
+    # cumulative chunk sequence up to and including each chunk (so a repeated
+    # chunk run is a hit). A hit requires an exact match, mirroring the way a
+    # real KV cache only reuses an identical token prefix.
     seen_prefixes: set = set()
 
-    # System prompt tokens (estimated)
+    # System prompt tokens (estimated).
+    #
+    # chars // 4 is a heuristic, not a tokenizer. Measured against the real
+    # server's /tokenize with the SmolLM2 vocab it over-estimates by roughly
+    # 20-26% (66 chars -> 16 estimated vs 13 actual; 559 chars -> 139 vs 110).
+    # Ratios between strategies stay comparable because every strategy uses the
+    # same estimator, but absolute token counts here are not real token counts.
     sys_tokens = max(1, len(system_prompt) // 4)
 
     for q_idx, query in enumerate(queries):
@@ -101,15 +108,26 @@ def simulate_cache(
 
         prompt_tokens += sys_tokens + q_tokens
 
-        # Process each chunk
-        for idx, chunk in enumerate(selected_chunks):
+        # Process each chunk.
+        #
+        # The cache key for the chunk region is the cumulative chunk sequence
+        # seen so far, NOT the query-bearing prefix. A real KV cache matches on
+        # the token prefix, so two prompts that open with the same chunk
+        # sequence reuse it regardless of which query follows. Measured against
+        # the real server: two prompts sharing a system prompt plus one chunk
+        # but differing in the trailing query reported
+        # usage.prompt_tokens_details.cached_tokens = 135 of 145 prompt tokens.
+        chunk_prefix_parts: List[str] = []
+        for chunk in selected_chunks:
             chunk_tag = f"<chunk>{chunk.text}</chunk>"
             chunk_tokens = max(1, len(chunk_tag) // 4)
 
-            # Prefix up to this chunk
-            chunk_prefix = f"{prefix}|{idx}"
+            # Prefix up to and including this chunk.
+            chunk_prefix_parts.append(chunk_tag)
+            chunk_prefix = "|".join(chunk_prefix_parts)
             if chunk_prefix in seen_prefixes:
                 prompt_cached += chunk_tokens
+            seen_prefixes.add(chunk_prefix)
 
             prompt_tokens += chunk_tokens
 
