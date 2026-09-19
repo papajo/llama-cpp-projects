@@ -252,3 +252,29 @@ Real servers used:
   always intended. Separately, `apply_typical` now keeps the most likely
   token when its threshold would empty the candidate set — real samplers
   never return an empty set. Offline test now passes 8/8 consecutive runs.
+
+## 12. Error bodies are a nested object, not a flat string
+
+- **Project / test**: `3-prompt-engineering/3.1-reasoning-budget-sweep` —
+  `tests/test_sweep.py::test_http_error_captured` (mock) and
+  `tests/test_live_sweep.py::test_real_400_is_captured_as_a_result_not_an_exception`
+- **What the mock asserted**: the canned 400 body was
+  `{"error": "bad request"}` — `error` mapped to a plain string — and the
+  test only asserted `"HTTP 400" in result.error`.
+- **What the real server returned**: a nested object, on every 4xx:
+  `{"error":{"code":400,"message":"Field 'temperature': [json.exception.type_error.302] type must be number, but is string","type":"invalid_request_error"}}`
+  Context overflow uses the same envelope with extra fields and a distinct
+  type: `{"error":{"code":400,"message":"request (6031 tokens) exceeds the
+  available context size (2048 tokens), try increasing it",
+  "type":"exceed_context_size_error","n_prompt_tokens":6031,"n_ctx":2048}}`
+- **Cause**: llama-server's standard OpenAI-compatible error envelope on
+  `/v1/chat/completions`. The `exceed_context_size_error` variant is
+  produced because the server was started with `n_ctx` 2048
+  (`n_ctx_train` is 8192, so this is a launch flag, not a model limit).
+- **Consequence**: no project bug — `run_sweep` only interpolates
+  `response.text` into `SweepResult.error`, so both shapes format fine. But
+  the mock could not express an assertion on the error *type*, so nothing
+  offline pinned the contract.
+- **Fixed**: canned body corrected to the real nested shape and the offline
+  test now asserts `"invalid_request_error"` appears. The live tests assert
+  both the plain 400 and the `exceed_context_size_error` path.
