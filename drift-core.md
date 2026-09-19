@@ -211,3 +211,23 @@ Real servers used:
   instead of taking the generic default; and `vocab_size` is taken from the
   tokenizer token list when present. Verified against the live server:
   nomic `n_embd` 768 / `n_vocab` 30522 now match exactly.
+
+## 10. Cache speedup is not observable at this model size (not a defect)
+
+- **Project / test**: `1-ai-fundamentals/1.6-prompt-cache-benchmark` —
+  `tests/test_live_cache.py::test_speedup_is_reported_but_not_asserted_to_be_favourable`
+- **What the mock asserted**: `test_cache_result_compute` feeds hand-picked
+  TTFTs (cached 50/60/70 ms vs uncached 200/220/240 ms) and asserts
+  `speedup_factor ≈ 3.67`. That is arithmetic on invented numbers, not a
+  measurement.
+- **What the real server returned**: prompt caching demonstrably *works* —
+  `timings.cache_n > 0` and `tokens_cached > 0` on a repeated prefix — but
+  with SmolLM2-360M and a ~40-token prefix the prompt-eval phase is already
+  sub-millisecond, so the cached arm is not reliably faster end to end.
+  `speedup_factor` fluctuates around 1.0 in either direction.
+- **Cause**: model size and prefix length, not a flag. The KV-reuse
+  machinery is confirmed active via `timings.cache_n`.
+- **Classification**: model too small. The live test asserts cache *reuse*
+  (`cache_n > 0`, the thing the code actually controls) and asserts only
+  that `speedup_factor` is finite and positive. No project code was changed
+  to chase a favourable ratio.
