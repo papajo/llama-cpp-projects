@@ -278,3 +278,68 @@ Real servers used:
 - **Fixed**: canned body corrected to the real nested shape and the offline
   test now asserts `"invalid_request_error"` appears. The live tests assert
   both the plain 400 and the `exceed_context_size_error` path.
+
+## 13. `tfs_z` no longer exists in llama.cpp, but is accepted silently
+
+- **Project / test**: `3-prompt-engineering/3.2-sampler-ablation-lab` —
+  `tests/test_live_ablation.py::test_tfs_z_is_not_in_this_builds_sampler_chain`
+- **What the mock asserted**: `test_config.py` only checks that
+  `SamplerConfig.to_request_body()` *emits* `tfs_z`, and `test_runner.py`
+  never sends it. Nothing asserted the server does anything with it.
+- **What the real server returned**: `HTTP 200`, normal output. But
+  `/props` shows the active sampler chain is
+  `["penalties", "dry", "top_n_sigma", "top_k", "typ_p", "top_p", "min_p",
+  "xtc", "temperature"]` — no `tfs_z` — and `tfs_z` is not even present
+  among `default_generation_settings.params`.
+- **Cause**: tail-free sampling was removed from llama.cpp upstream. The
+  server ignores unrecognised body keys rather than rejecting them.
+- **Classification**: unsupported in this build. No code changed — the
+  request is well-formed and the project is right to be able to emit it.
+  The live test pins the fact that ablating `tfs_z` measures nothing here,
+  so a future "tfs_z had no effect" result is not read as a finding.
+
+## 14. `mirostat` is a recognised param but not in the active sampler chain
+
+- **Project / test**: `3-prompt-engineering/3.2-sampler-ablation-lab` —
+  `tests/test_live_ablation.py::test_mirostat_is_accepted_but_absent_from_the_sampler_chain`
+- **What the mock asserted**: `test_config.py` asserts `cfg.mirostat == 1`
+  / `== 2` for the two presets — a dataclass field check with no server
+  involvement.
+- **What the real server returned**: `HTTP 200` with normal output for both
+  `preset_mirostat_v1()` and `preset_mirostat_v2()`. `/props` still lists
+  `mirostat: 0`, `mirostat_tau: 5.0`, `mirostat_eta: 0.1` among the default
+  params (so the field is recognised), but `"mirostat"` does **not** appear
+  in the `samplers` chain.
+- **Cause**: llama.cpp keeps the mirostat request fields but the chain
+  reported by `/props` is the standard truncation chain. Nothing in this
+  deployment demonstrates mirostat engaging.
+- **Classification**: unsupported in this build. Not faked as a pass — the
+  live test asserts only that the presets are accepted and produce output,
+  and records that the mirostat arm of an ablation is not measurable here.
+
+## 15. `typ_p` (chain name) vs `typical_p` (request field) — not a defect
+
+- **Project / test**: `3-prompt-engineering/3.2-sampler-ablation-lab` —
+  `tests/test_live_ablation.py::test_config_uses_typical_p_the_name_the_server_accepts`
+- **What the real server returned**: `/props` names the sampler `typ_p` in
+  the chain, while the request-side parameter and the default-params block
+  both use `typical_p`.
+- **Cause**: llama.cpp uses the short name internally for the chain listing
+  and the long name on the API surface.
+- **Classification**: no defect. The project emits `typical_p`, which is the
+  correct request field. Recorded only so the two names are not mistaken
+  for drift during the merge.
+
+## 16. Unknown sampler keys are accepted without error
+
+- **Project / test**: `3-prompt-engineering/3.2-sampler-ablation-lab` —
+  `tests/test_live_ablation.py::test_unknown_sampler_params_are_silently_ignored`
+- **What the real server returned**: `HTTP 200` for a body containing
+  `"definitely_not_a_sampler": 1.23`.
+- **Cause**: llama-server ignores unrecognised keys on
+  `/v1/chat/completions` rather than validating the body strictly. (Matches
+  the conductor's finding that an unknown *model* id is also silently
+  accepted and served by the loaded model.)
+- **Classification**: server behaviour, no code change. Pinned because it is
+  the failure mode behind entries 13 and 14: a misspelled or removed
+  sampler name in an ablation grid yields a clean run that measured nothing.
