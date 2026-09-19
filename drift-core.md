@@ -173,3 +173,41 @@ Real servers used:
   contexts (bare / string literal / character class) honouring backslash
   escapes, and reports unterminated literals, unterminated classes and stray
   closers. `root ::= "(" "[" "]" ")"` still validates clean.
+
+## 9. GGUF attention + vocab keys silently fell back to llama-2 defaults
+
+- **Project / test**: `1-ai-fundamentals/1.4-gguf-quant-explorer` —
+  `tests/test_live_gguf.py::test_derived_dims_match_live_server` and
+  `::test_attention_dims_are_read_not_defaulted`
+- **What the mock asserted**: the offline suite parses synthetic GGUF byte
+  streams it builds itself, using flat keys like `llama.head_count`. Those
+  streams are internally consistent, so the fallback table was never hit and
+  the tests passed.
+- **What the real files / server returned**: in a real GGUF the attention
+  hyper-parameters are namespaced under `<arch>.attention.*`, and there is no
+  `vocab_size` key at all — the authoritative vocab is
+  `len(tokenizer.ggml.tokens)`. Measured:
+
+  | field | parser said | real file | live server |
+  |---|---|---|---|
+  | `head_count` (nomic-bert) | 32 | 12 (`nomic-bert.attention.head_count`) | — |
+  | `head_count_kv` (nomic-bert) | 8 | absent → MHA, = 12 | — |
+  | `vocab_size` (nomic) | 32000 | 30522 (`len(tokenizer.ggml.tokens)`) | `n_vocab` = 30522 |
+  | `head_count` / `_kv` (qwen2) | 32 / 8 | 12 / 2 | — |
+  | `vocab_size` (qwen2) | 32000 | 151936 | — |
+
+- **Cause**: not a llama-server flag — this is the GGUF metadata layout
+  itself. `_derive_model_info` searched the prefix chain
+  `["<arch>.", "llama.", ""]` for a bare `head_count` / `vocab_size`, missed,
+  and silently returned `_KNOWN_SIZES` (the llama-2 defaults: 32 heads,
+  8 KV heads, 32000 vocab). Every value looked plausible, which is why it
+  went unnoticed.
+- **Consequence**: `head_count`, `head_count_kv` and `vocab_size` were the
+  same constants for *every* model. `is_gqa` was therefore always `True`
+  (nomic-bert is actually MHA), and the parameter-count and KV-cache
+  estimates — the whole point of the tool — were computed from wrong dims.
+- **Fixed**: the lookup now also tries `attention.<key>`; a model with no
+  explicit KV head count is treated as MHA (`head_count_kv = head_count`)
+  instead of taking the generic default; and `vocab_size` is taken from the
+  tokenizer token list when present. Verified against the live server:
+  nomic `n_embd` 768 / `n_vocab` 30522 now match exactly.
