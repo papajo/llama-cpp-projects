@@ -119,23 +119,25 @@ def test_trace_analysis():
         "content": '{"name": "Alice"}',
         "completion_probabilities": [
             {
-                "text": '{"',
+                "token": '{"',
                 "id": 1,
+                "bytes": [123, 34],
                 "logprob": -0.1,
                 "top_logprobs": [
-                    {"id": 1, "logprob": -0.1},
-                    {"id": 2, "logprob": -1.5},
-                    {"id": 3, "logprob": -2.0},
+                    {"id": 1, "token": '{"', "logprob": -0.1},
+                    {"id": 2, "token": "{", "logprob": -1.5},
+                    {"id": 3, "token": " {", "logprob": -2.0},
                 ],
             },
             {
-                "text": "name",
+                "token": "name",
                 "id": 42,
+                "bytes": [110, 97, 109, 101],
                 "logprob": -0.3,
                 "top_logprobs": [
-                    {"id": 42, "logprob": -0.3},
-                    {"id": 43, "logprob": -0.8},
-                    {"id": 44, "logprob": -1.2},
+                    {"id": 42, "token": "name", "logprob": -0.3},
+                    {"id": 43, "token": "nam", "logprob": -0.8},
+                    {"id": 44, "token": "n", "logprob": -1.2},
                 ],
             },
         ],
@@ -143,6 +145,9 @@ def test_trace_analysis():
     result = GrammarDebugger.analyse_completion(completion_data)
     assert result.total_tokens == 2
     assert result.full_text == '{"name": "Alice"}'
+    # The chosen token text must survive the parse - it is read from the
+    # server's "token" field, not "text".
+    assert [s.token_text for s in result.constrained_steps] == ['{"', "name"]
     print(f"  ✓ Trace analysis: {result.total_tokens} tokens, "
           f"{result.tokens_masked} masked, "
           f"{result.mask_rate*100:.1f}% mask rate")

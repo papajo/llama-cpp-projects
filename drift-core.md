@@ -94,3 +94,28 @@ Real servers used:
 - **Classification**: unsupported in this deployment. The end-to-end
   speculative strategy test is skipped with that reason rather than faked;
   the counters are asserted to be zero, which is the honest result.
+
+## 6. `completion_probabilities` entries key the token as `token`, not `text`
+
+- **Project / test**: `1-ai-fundamentals/1.3-constrained-decoding-playground` —
+  `tests/test_grammar.py::test_trace_analysis` (mock) and
+  `tests/test_live_grammar.py::test_analyse_real_constrained_completion` (live)
+- **What the mock asserted**: the canned `completion_probabilities` list used
+  `{"text": '{"', "id": 1, "logprob": -0.1, "top_logprobs": [{"id":…,
+  "logprob":…}]}` — a `text` key for the chosen token, and candidate entries
+  carrying only `id` and `logprob`. The test asserted only `total_tokens` and
+  `full_text`, so it never noticed which token string came back.
+- **What the real server returned** (`POST /completion` with `n_probs`):
+  `{"id": 32, "token": "0", "bytes": [48], "logprob": -4.70,
+  "top_logprobs": [{"id": 216, "token": " ", "bytes": [32], "logprob": -0.13}, …]}`
+  — the field is `token`, there is no `text`, and every entry (chosen and
+  candidate) additionally carries `bytes`.
+- **Cause**: `/completion` with `n_probs > 0`; llama-server aligned these
+  entries with the OpenAI logprobs schema, which names the field `token`.
+- **Consequence**: `GrammarDebugger.analyse_completion` read
+  `prob_entry.get("text", "")`, so `GrammarMaskStep.token_text` was `""` for
+  every token of every real trace. The masking heuristic (which matches on
+  `id`) still worked, but the rendered trace was blank.
+- **Fixed**: read `token` first, falling back to `text` for older payloads.
+  Mock data corrected to the real shape and the offline test now asserts
+  `token_text`.
