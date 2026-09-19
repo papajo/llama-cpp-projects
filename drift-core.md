@@ -44,3 +44,53 @@ Real servers used:
 - **Classification**: unsupported in this deployment. The Prometheus parser is
   left untested rather than faked; the live test asserts the honest 501 and
   that `report()` degrades to zeroed metrics.
+
+## 3. Streaming `/completion`: stop chunk has empty `content`
+
+- **Project / test**: `1-ai-fundamentals/1.2-spec-decoding-benchmark` —
+  `tests/test_live_spec_decoding.py::test_full_text_is_the_accumulated_stream`
+- **What the mock asserted**: nothing — 1.2 shipped no tests at all.
+  `BenchmarkRunner.send_completion` set
+  `result["full_text"] = data.get("content", "")` on the chunk where
+  `stop == True`.
+- **What the real server returned**: the terminating SSE chunk carries the
+  stop metadata (`stop, stop_type, timings, tokens_cached, truncated,
+  generation_settings, …`) with `content` set to the empty string. The
+  generated text only ever exists as the concatenation of the preceding
+  chunks' `content` fields.
+- **Cause**: llama-server's streaming protocol on `/completion` — the final
+  frame is a summary frame, not a text frame.
+- **Consequence**: `full_text` was `""` for every run.
+- **Fixed**: `full_text` is now `"".join(result["tokens"])`.
+
+## 4. Streaming `/completion`: phantom token from the stop chunk
+
+- **Project / test**: `1-ai-fundamentals/1.2-spec-decoding-benchmark` —
+  `tests/test_live_spec_decoding.py::test_token_count_matches_server_accounting`
+- **What the mock asserted**: nothing (no tests shipped).
+  The token loop tested `if "content" in data:` — key presence.
+- **What the real server returned**: the stop chunk *has* a `content` key
+  whose value is `""`. Measured: 11 chunks carrying a `content` key, 10 with
+  non-empty content, and the server's own `timings.predicted_n == 10`.
+- **Cause**: same summary-frame protocol as above.
+- **Consequence**: `total_tokens` was inflated by exactly one on every
+  request, and one bogus entry was appended to `tokens`/`timestamps`. This
+  skews every tokens-per-second figure the benchmark reports.
+- **Fixed**: the loop now tests `if data.get("content"):` (truthiness).
+
+## 5. No speculative-decoding telemetry on this server
+
+- **Project / test**: `1-ai-fundamentals/1.2-spec-decoding-benchmark` —
+  `test_draft_acceptance_telemetry_absent_without_draft_model`,
+  `test_server_reports_no_speculative_slot`, and a skipped
+  `test_speculative_strategy_end_to_end`.
+- **What the mock asserted**: nothing (no tests shipped). `send_completion`
+  looks for `draft_accepted` / `draft_total` keys in the stream.
+- **What the real server returned**: neither key ever appears. `/slots`
+  reports `"speculative": false` for all 3 slots and `/props` reports
+  `"speculative.types": "none"`.
+- **Cause**: llama-server was started without `--model-draft`, so no draft
+  model is loaded and the speculative sampler is never engaged.
+- **Classification**: unsupported in this deployment. The end-to-end
+  speculative strategy test is skipped with that reason rather than faked;
+  the counters are asserted to be zero, which is the honest result.
