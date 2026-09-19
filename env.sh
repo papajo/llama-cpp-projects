@@ -26,8 +26,17 @@ export LD_LIBRARY_PATH=/home/pa-joshi/llama.cpp/build/bin:$LD_LIBRARY_PATH
 # Unset means the live layer is skipped and only the offline unit tests run.
 export LLM_LIVE=${LLM_LIVE:-}
 
+# Resolve to whichever checkout this env.sh lives in, so a git worktree uses
+# its own _shared/ rather than the main repo's.
+LLAMA_PROJECTS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export LLAMA_PROJECTS_ROOT
+
 # Repo root on the path so `_shared` is importable from any project, and the
 # live fixtures load as a global pytest plugin regardless of each project's
 # own pytest rootdir (every project ships its own pyproject.toml).
-export PYTHONPATH=/home/pa-joshi/llama-cpp-projects${PYTHONPATH:+:$PYTHONPATH}
+export PYTHONPATH=${LLAMA_PROJECTS_ROOT}${PYTHONPATH:+:$PYTHONPATH}
 export PYTEST_PLUGINS=_shared.live_fixtures
+
+# The shared venv lives in the main checkout; worktrees reuse it.
+export LLAMA_VENV=/home/pa-joshi/llama-cpp-projects/.venv
+export PATH=${LLAMA_VENV}/bin:$PATH

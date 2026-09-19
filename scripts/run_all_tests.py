@@ -22,7 +22,20 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-PYTHON = REPO / ".venv" / "bin" / "python"
+
+
+def _python() -> Path:
+    """The shared venv interpreter; worktrees have no .venv of their own."""
+    env = os.environ.get("LLAMA_VENV")
+    if env and (Path(env) / "bin" / "python").exists():
+        return Path(env) / "bin" / "python"
+    local = REPO / ".venv" / "bin" / "python"
+    if local.exists():
+        return local
+    return Path(sys.executable)
+
+
+PYTHON = _python()
 
 CATEGORIES = {
     "core": ["1-ai-fundamentals", "3-prompt-engineering"],
@@ -80,10 +93,6 @@ def main() -> int:
     ap.add_argument("--json", type=Path, help="write full results here")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
-
-    if not PYTHON.exists():
-        print(f"error: shared venv missing at {PYTHON}", file=sys.stderr)
-        return 2
 
     modes = ["offline", "live"] if args.mode == "both" else [args.mode]
     projects = find_projects(args.category)
