@@ -142,11 +142,13 @@ class LoraManager:
             # Fallback: disable via scale=0
             return self.disable_adapter(lora_id)
 
-    def list_adapters(self) -> Dict[str, Any]:
+    def list_adapters(self) -> List[Dict[str, Any]]:
         """
         List currently loaded LoRA adapters.
 
-        Corresponds to ``GET /lora-adapters``.
+        Corresponds to ``GET /lora-adapters``, which returns a JSON **array**
+        of adapter objects -- not an object. Verified against a real server:
+        with no ``--lora`` flags it returns ``[]``.
         """
         response = self._client.get(f"{self.base_url}/lora-adapters")
         if response.status_code >= 400:

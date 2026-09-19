@@ -142,11 +142,14 @@ class TestLoraManager:
         with patch.object(mgr._client, "get") as mock_get:
             mock_response = MagicMock()
             mock_response.status_code = 200
-            mock_response.json.return_value = {"adapters": []}
+            # GET /lora-adapters returns a JSON array, not an object. A real
+            # server with no --lora flags returns exactly [].
+            mock_response.json.return_value = []
             mock_get.return_value = mock_response
 
             result = mgr.list_adapters()
-            assert result == {"adapters": []}
+            assert result == []
+            assert isinstance(result, list)
 
 
 class TestLoraAgent:

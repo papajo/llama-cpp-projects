@@ -355,3 +355,55 @@ only coverage those two methods have.
   accepts, proving the request shape itself is valid and only the image block is
   refused). Real PNGs are loaded from disk by the project's own `ImageLoader`,
   including the resize path, and round-tripped back through base64.
+
+## 17. `POST /lora-adapters` reports success for ANY body — silent no-op
+
+- **Project / test:** `2.4-lora-hotswap-personas` — `tests/test_persona_router.py::TestLoraManager`,
+  `agent/lora_manager.py`, `agent/lora_agent.py`.
+- **What the mock asserted:** `apply_adapter` POSTs
+  `[{"id": 0, "scale": 1.0}]` and a `{"success": true}` response means the
+  adapter was applied.
+- **What the real server returned:** `{"success": true}` with HTTP 200 for
+  **every** body tried — `id 0`, `id 99`, `id -5`, `{"id": 0}` with no scale,
+  `{"scale": 1.0}` with no id, and even `{"id": "notanint"}` — while
+  `GET /lora-adapters` kept returning `[]` throughout. With no adapters loaded
+  the endpoint is a **silent no-op that always reports success**. The only
+  input it rejects is a non-array body (400, "Request body must be an array").
+- **Cause:** llama-server was started without `--lora` / `--lora-scaled`, so
+  there are no adapter slots; the handler still returns success. Unsupported on
+  this build.
+- **Why this matters more than a normal skip:** a live test that merely asserted
+  "`apply_adapter` did not raise" would **pass**, and would look like evidence
+  that persona hot-swapping works. It does nothing at all here. The live tests
+  therefore assert the no-op *as a no-op* (success response AND an empty
+  listing), and the one test that could actually prove a swap — the applied
+  adapter appearing in `GET /lora-adapters` — is `xfail(strict=True)`.
+
+## 18. `GET /lora-adapters` returns an array, not an object
+
+- **Project / test:** `2.4-lora-hotswap-personas` — `tests/test_persona_router.py::TestLoraManager::test_list_adapters`.
+- **What the mock asserted:** `{"adapters": []}` — a JSON **object** with an
+  `adapters` key — and `LoraManager.list_adapters` was annotated
+  `-> Dict[str, Any]` to match.
+- **What the real server returned:** a bare JSON **array**: `[]`. With adapters
+  loaded it is an array of adapter objects.
+- **Cause:** no flag; that is simply the endpoint's shape. Fixed the return
+  annotation to `List[Dict[str, Any]]` and updated the mocked expectation to
+  return `[]`. Nothing depended on the wrong shape at runtime — `list_adapters`
+  just forwards `response.json()` — so this was a latent trap for the next
+  caller rather than a live failure.
+
+## 19. `DELETE /lora-adapters/<id>` is not a route
+
+- **Project / test:** `2.4-lora-hotswap-personas` — `agent/lora_manager.py::remove_adapter`.
+- **What the mock asserted:** the offline tests exercise the POST paths; the
+  DELETE fallback was never driven against a real 404.
+- **What the real server returned:** HTTP **404**
+  `{"error":{"message":"File Not Found","type":"not_found_error","code":404}}`
+  — the request falls through to the **static-file handler**, which is why the
+  message is "File Not Found" rather than a method/route error.
+- **Cause:** no such route exists in this build; scale-0 via POST is the
+  supported way to disable an adapter. `remove_adapter` handles it correctly —
+  it raises `HTTPStatusError` internally, catches its own exception, and falls
+  back to `disable_adapter` — so the caller still gets `{"success": true}`.
+  Confirmed working live. No change needed.
