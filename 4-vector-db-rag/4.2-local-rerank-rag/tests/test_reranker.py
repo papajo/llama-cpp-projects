@@ -104,6 +104,26 @@ class TestReranker:
             score = reranker.score("test query", "test doc")
             assert score == 0.0
 
+    def test_score_bare_json_number(self):
+        """A bare number is valid JSON, so json.loads returns an int.
+
+        SmolLM2-360M really does answer "0" instead of the requested object.
+        Before the fix this raised AttributeError from .get() on an int.
+        """
+        with patch("urllib.request.urlopen") as m:
+            reranker = self._reranker_with_mock(m, "0")
+            assert reranker.score("test query", "test doc") == 0.0
+
+    def test_score_bare_json_number_nonzero(self):
+        with patch("urllib.request.urlopen") as m:
+            reranker = self._reranker_with_mock(m, "7")
+            assert reranker.score("test query", "test doc") == 0.7
+
+    def test_score_bare_json_null(self):
+        with patch("urllib.request.urlopen") as m:
+            reranker = self._reranker_with_mock(m, "null")
+            assert reranker.score("test query", "test doc") == 0.0
+
     def test_rerank_reorders(self):
         with patch("urllib.request.urlopen") as m:
             # Return decreasing scores so reranking reverses the order

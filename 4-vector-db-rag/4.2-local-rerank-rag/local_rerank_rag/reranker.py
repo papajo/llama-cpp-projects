@@ -101,8 +101,23 @@ class Reranker:
 
         try:
             parsed = json.loads(cleaned)
-            score = int(parsed.get("score", 0))
-        except (json.JSONDecodeError, ValueError, TypeError):
+        except (json.JSONDecodeError, ValueError):
+            parsed = None
+
+        score = None
+        if isinstance(parsed, dict):
+            try:
+                score = int(parsed.get("score", 0))
+            except (TypeError, ValueError):
+                score = None
+        elif isinstance(parsed, (int, float)) and not isinstance(parsed, bool):
+            # A bare JSON number is itself valid JSON, so json.loads succeeds
+            # and returns an int/float rather than a dict. Small models answer
+            # with just "0" or "7" instead of the requested object; treat that
+            # number as the score rather than calling .get() on it.
+            score = int(parsed)
+
+        if score is None:
             # Fallback: find any integer 0-10 in the text
             match = re.search(r"\b(10|[0-9])\b", cleaned)
             score = int(match.group(1)) if match else 0
