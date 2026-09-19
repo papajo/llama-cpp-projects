@@ -29,11 +29,20 @@ from conditional_branching.core import (
 def chat_step(live_chat):
     """An ActionStep that really calls the chat server."""
 
-    def make(name: str, prompt: str, out_key: str, max_tokens: int = 16):
+    def make(
+        name: str,
+        prompt: str,
+        out_key: str,
+        max_tokens: int = 16,
+        ignore_eos: bool = False,
+    ):
         def fn(state):
-            resp = live_chat(
-                [{"role": "user", "content": prompt}], max_tokens=max_tokens
-            )
+            kw = {"max_tokens": max_tokens}
+            if ignore_eos:
+                # Suppress EOS so the token cap is the only stop condition and
+                # finish_reason is "length" by construction rather than by luck.
+                kw["ignore_eos"] = True
+            resp = live_chat([{"role": "user", "content": prompt}], **kw)
             content = resp["choices"][0]["message"]["content"]
             return {
                 out_key: content,
@@ -101,9 +110,11 @@ def test_branch_selected_from_real_output_length(chat_step):
 def test_branch_on_real_finish_reason(chat_step):
     """finish_reason is a real server field; branch on it.
 
-    max_tokens=8 against a prompt that cannot be satisfied in 8 tokens gives
-    finish_reason == "length" (see drift-graph.md entry 1 — the offline mocks
-    omitted this field entirely).
+    max_tokens=8 with ignore_eos=True makes the token cap the only stop
+    condition, so finish_reason == "length" deterministically. Without
+    ignore_eos SmolLM2 sometimes emits EOS inside 8 tokens and returns "stop"
+    instead, which made this test flaky (see drift-rag.md entry 6). The offline
+    mocks omitted the field entirely (drift-graph.md entry 1).
     """
     agent = ConditionalAgent(
         pre_steps=[
@@ -112,6 +123,7 @@ def test_branch_on_real_finish_reason(chat_step):
                 "Count from one to one hundred slowly.",
                 "answer",
                 max_tokens=8,
+                ignore_eos=True,
             )
         ],
         branches=[
