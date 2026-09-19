@@ -175,3 +175,54 @@ class TestChain:
             system_prompt="Extract product reviews as JSON.",
         )
         assert chain.system_prompt == "Extract product reviews as JSON."
+
+
+class TestRequestBody:
+    """Regression tests: what actually goes over the wire.
+
+    No offline test used to inspect the request body, so the fact that
+    `json_schema` was being sent as a JSON *string* went unnoticed. A real
+    llama-server rejects that with HTTP 400:
+    "Field 'json_schema': ... schema must be an object".
+    """
+
+    def _captured_body(self, schema=None) -> dict:
+        parser = GrammarOutputParser(base_url="http://test:8080")
+        with patch.object(parser, "_get_client") as mock_get:
+            mock_client = MagicMock()
+            mock_client.post.return_value = make_completion_response(
+                json.dumps({"name": "Alice", "age": 30, "email": None})
+            )
+            mock_get.return_value = mock_client
+            parser.invoke(prompt="Extract: Alice is 30", schema=schema or Person)
+            _, kwargs = mock_client.post.call_args
+            return kwargs["json"]
+
+    def test_json_schema_is_sent_as_an_object(self):
+        body = self._captured_body()
+        assert isinstance(body["json_schema"], dict), (
+            "json_schema must be the schema object; llama-server returns 400 "
+            "for a JSON string"
+        )
+        assert body["json_schema"]["type"] == "object"
+        assert "name" in body["json_schema"]["properties"]
+
+    def test_posts_to_the_completion_endpoint(self):
+        parser = GrammarOutputParser(base_url="http://test:8080")
+        with patch.object(parser, "_get_client") as mock_get:
+            mock_client = MagicMock()
+            mock_client.post.return_value = make_completion_response(
+                json.dumps({"name": "Alice", "age": 30, "email": None})
+            )
+            mock_get.return_value = mock_client
+            parser.invoke(prompt="Extract: Alice is 30", schema=Person)
+            args, _ = mock_client.post.call_args
+            assert args[0] == "/completion"
+
+    def test_native_completion_param_names(self):
+        """/completion takes n_predict, not max_tokens."""
+        body = self._captured_body()
+        assert "n_predict" in body
+        assert "max_tokens" not in body
+        assert body["cache_prompt"] is True
+        assert body["temperature"] == 0.0

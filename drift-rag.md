@@ -263,3 +263,65 @@ embed `http://127.0.0.1:8081` nomic-embed-text-v1.5 Q8_0, n_embd 768, n_ctx 2048
 2.1's live async tests drive `_agenerate`/`_astream` with `asyncio.run()` from
 sync tests. The offline suite covers no async path at all, so these are the
 only coverage those two methods have.
+
+## 13. `json_schema` sent as a JSON string — REAL BUG (fixed), total feature failure
+
+- **Project / test:** `2.2-grammar-structured-output` — `parser/parser.py::GrammarOutputParser.invoke`,
+  exposed by `tests/test_live_grammar.py::test_returns_a_valid_model_instance`.
+- **What the mock asserted:** nothing about the request at all. Every offline
+  test in `test_parser.py` patches `_get_client` and asserts only that the
+  parser parses the JSON the mock hands back. **No offline test inspected the
+  request body**, so the field was never checked.
+- **What the real server returned:** HTTP **400** for every single call —
+  `{"error":{"code":400,"message":"Field 'json_schema': \"json_schema\": JSON
+  schema conversion failed:\nJSON schema error at #: schema must be an
+  object","type":"invalid_request_error"}}`. The parser did
+  `schema_str = json.dumps(json_schema)` and sent the *string*; llama-server's
+  `/completion` requires the schema **object**. So this project's one headline
+  feature — guaranteed schema-conformant output — failed 100% of the time
+  against a real server while its offline suite was fully green.
+- **Cause:** not a server flag. llama-server parses `json_schema` with
+  `json_value.is_object()` before converting it to GBNF and rejects any other
+  JSON type. Fixed by passing the dict. Verified end to end: the real server
+  now returns `Person(name='John Smith', age=30)`. Four regression tests added
+  (`TestRequestBody`) that assert on the wire format — `json_schema` is a dict,
+  the endpoint is `/completion`, and the native param is `n_predict`, not
+  `max_tokens`.
+- **Grammar itself works well:** with the fix, nested models, lists,
+  `Literal` enums, bools and optionals all come back conformant from a 360M
+  model — the sampler cannot emit an off-grammar token, so structure is right
+  even when values are invented (`email: "john@example.com"` for a prompt that
+  mentions no email). That is *model too small*, not a defect, and no live test
+  asserts field values.
+
+## 14. `/completion` returns nothing at all for an empty prompt
+
+- **Project / test:** `2.2-grammar-structured-output` — `tests/test_live_grammar.py::test_empty_prompt_generates_nothing_and_raises_clearly`.
+- **What the mock asserted:** that grammar-constrained output is always valid
+  JSON, with the parser's `json.loads` failure branch commented "This should
+  never happen with grammar constraints".
+- **What the real server returned:** for `prompt: ""` — `content: ""`,
+  `tokens_predicted: 0`, `stop_type: "none"`. It generates **zero tokens**, so
+  the grammar has nothing to constrain and the "always valid JSON" guarantee is
+  vacuous. Every non-empty prompt returned conformant JSON
+  (`stop_type: "eos"`, 20-34 tokens).
+- **Cause:** no flag — a grammar restricts *which* tokens may be sampled, it
+  cannot compel sampling to happen. Left as-is deliberately: the parser's guard
+  raises a clear `ValueError` naming the offending output, which is the right
+  behaviour for a degenerate input. Now pinned by a live test so the guard is
+  no longer dead code.
+
+## 15. Native `/completion` response has keys the canned one omits
+
+- **Project / test:** `2.2-grammar-structured-output` — `tests/test_parser.py::make_completion_response`.
+- **What the mock asserted:** a 5-key body — `content`, `tokens_predicted`,
+  `tokens_evaluated`, `truncated`, `model`.
+- **What the real server returned:** all of those plus `stop`, `stop_type`
+  (`"eos"` / `"none"` / `"limit"`), `timings`, `prompt`, `has_new_line`,
+  `index`, `tokens_cached`, and a full `generation_settings` block that echoes
+  the applied sampler config — including `generation_settings.grammar`, which
+  is the compiled GBNF and therefore direct proof the constraint was applied.
+- **Cause:** llama.cpp's native (non-OpenAI) `/completion` endpoint is verbose
+  by design. The mock stays minimal since the parser reads only `content`, but
+  the live test now pins the real shape and asserts the grammar was echoed back.
+- **Covered live by:** `test_live_grammar.py::test_native_completion_response_shape`.

@@ -104,7 +104,6 @@ class GrammarOutputParser(BaseOutputParser[BaseModel]):
         """
         client = self._get_client()
         json_schema = self._compiler.compile(schema)
-        schema_str = json.dumps(json_schema)
 
         # Build the prompt
         if isinstance(prompt, str):
@@ -118,7 +117,10 @@ class GrammarOutputParser(BaseOutputParser[BaseModel]):
 
         body: Dict[str, Any] = {
             "prompt": request_prompt,
-            "json_schema": schema_str,
+            # Must be the schema OBJECT, not a JSON string. llama-server
+            # rejects a string with HTTP 400 "Field 'json_schema': ... schema
+            # must be an object".
+            "json_schema": json_schema,
             "temperature": kwargs.get("temperature", self.temperature),
             "n_predict": kwargs.get("max_tokens", self.max_tokens),
             "cache_prompt": True,
