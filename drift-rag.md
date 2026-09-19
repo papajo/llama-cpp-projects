@@ -165,3 +165,29 @@ embed `http://127.0.0.1:8081` nomic-embed-text-v1.5 Q8_0, n_embd 768, n_ctx 2048
   the code and pinned by a live test.
 - **Covered live by:** `test_live_cache.py::test_chars_over_four_overestimates_real_tokens`,
   `::test_estimator_is_monotonic_in_real_tokens`.
+
+## 9. Canned vectors are orthogonal; real embeddings are crowded
+
+- **Project / test:** `4.4-multi-tenant-rag` — `tests/test_tenant_store.py`,
+  `tests/test_pipeline.py` (and the same pattern in 4.1/4.2).
+- **What the mock asserted:** hand-written basis-like vectors
+  (`[1, 0, 0]`, `[0, 1, 0]`, ...), so every non-matching similarity is exactly
+  `0.0` and the "right" document wins by an unmissable margin.
+- **What the real server returned:** 768-dim nomic embeddings sit in a narrow
+  cone — two deliberately unrelated documents ("Acme Corp quarterly revenue
+  report" vs "Healthplus patient intake policy") still score cosine **> 0.05**,
+  and semantically close documents across *different tenants* compete directly
+  for top-k slots. Measured on the real corpus: isolated retrieval leaked
+  **0** documents (the guarantee holds — it is structural, not score-based),
+  while the deliberately non-isolated baseline leaked **5** of 27 retrieved.
+- **Cause:** no flag — a property of real sentence-embedding geometry
+  (anisotropy) that clean synthetic vectors do not reproduce. Nothing to fix:
+  4.4's isolation is enforced by dict partitioning and tenant-relative
+  indices, so it is score-independent by construction. Recorded because a
+  score-based or threshold-based isolation scheme would pass the offline suite
+  and leak in production.
+- **Covered live by:** `test_live_tenant_isolation.py::test_real_vectors_are_not_orthogonal`,
+  `::test_search_only_returns_own_tenant_documents` (checks document identity,
+  not just index), `::test_non_isolated_baseline_does_leak`.
+
+**No code defects found in 4.4** — isolation held on real vectors in every path.
