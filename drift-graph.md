@@ -271,3 +271,33 @@ this server cannot produce `tool_calls`. This is a property of the SmolLM2-360M
 template, not of any project's code, so no live test drives an MCP tool through
 the model. The MCP tools in 6.1/6.3 are therefore called directly (as the
 offline tests do) rather than via model-chosen invocation.
+
+---
+
+## 10. 5.6 / 5.8 — real concurrency is capped at 3 by `--parallel`
+
+**Classification: environment constraint — live tests sized to it, no code changed.**
+
+**Test:** `5.6-parallel-execution/tests/test_live_core.py`,
+`5.8-map-reduce/tests/test_live_core.py`
+
+**What the mocks asserted:** offline fan-out is unbounded — synthetic lambdas
+return instantly, so `ParallelAgent(max_workers=4)` and
+`MapReduceAgent(max_workers=4)` appear to scale freely.
+
+**What the real server does:** `/props` reports `total_slots: 3`, and `/slots`
+lists exactly three slot objects (`id` 0-2), each with `n_ctx: 2048`. A fourth
+concurrent request waits for a slot instead of running in parallel.
+
+**Cause:** llama-server's `--parallel` / `-np` flag (3 on this instance) fixes
+the number of decode slots. `max_workers` above that number buys nothing; the
+extra threads block on the HTTP response.
+
+**Effect on the tests:** live fan-out is capped at 3 so the wall-clock
+assertion in
+`5.6::test_parallel_is_faster_than_serial_would_be` stays meaningful — it
+asserts `total < sum(per_task) * 0.9`, which genuinely fails if the executor
+serialises but tolerates a loaded CPU. With a fan-out above the slot count that
+assertion would flake, since queued requests serialise for reasons that have
+nothing to do with the code under test. 5.8 uses the embed server for its wider
+fan-outs because embeddings are far cheaper on CPU than generation.
