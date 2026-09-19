@@ -22,11 +22,15 @@ class ModelInfo:
 
     @classmethod
     def from_openai_response(cls, data: Dict[str, Any]) -> ModelInfo:
+        # llama.cpp reports the loaded context window as meta.n_ctx; plain
+        # OpenAI payloads have no meta block, so fall back to 0.
+        meta = data.get("meta") or {}
         return cls(
             id=data.get("id", "unknown"),
             object=data.get("object", "model"),
             owned_by=data.get("owned_by", "unknown"),
             permission=data.get("permission", []),
+            context_length=int(meta.get("n_ctx", 0) or 0),
         )
 
 

@@ -219,7 +219,18 @@ class EnterpriseGateway:
         """Run all checks. Returns GatewayResult with allowed bool."""
 
         # 1. Auth
-        if self.config.require_auth and token:
+        #
+        # A missing token must be denied, not waved through. Gating this block
+        # on `and token` meant an unauthenticated caller bypassed auth entirely
+        # while a caller presenting a BAD token was correctly rejected - i.e.
+        # supplying no credential was safer than supplying a wrong one.
+        if self.config.require_auth:
+            if not token:
+                reason = "Missing authentication token"
+                self.config.audit_log.record(
+                    client_id, tool_name, params, False, reason
+                )
+                return GatewayResult(allowed=False, reason=reason, status_code=401)
             allowed, reason = self.config.auth_provider.authenticate(token, tool_name)
             if not allowed:
                 self.config.audit_log.record(

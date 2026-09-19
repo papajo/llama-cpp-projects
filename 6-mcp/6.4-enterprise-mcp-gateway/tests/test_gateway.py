@@ -163,6 +163,90 @@ class TestEnterpriseGateway:
         assert result.allowed is False
         assert result.status_code == 401
 
+    # ── Auth bypass regression (see drift-graph.md, "Real bugs found") ──
+    #
+    # `check_request` used to gate its auth block on `require_auth and token`,
+    # so an empty token skipped authentication entirely: presenting NO
+    # credential was safer than presenting a wrong one. These four tests pin
+    # the whole truth table.
+
+    def test_require_auth_denies_empty_token(self):
+        auth = ApiKeyAuthProvider()
+        auth.add_key("sk-valid")
+        gw = EnterpriseGateway(GatewayConfig(auth_provider=auth))
+
+        result = gw.check_request(
+            tool_name="read_file",
+            params={"path": "/tmp"},
+            client_id="anonymous",
+            token="",
+        )
+
+        assert result.allowed is False
+        assert result.status_code == 401
+        assert result.reason == "Missing authentication token"
+
+        # The denial is audited exactly like any other auth failure.
+        assert gw.config.audit_log.total_requests == 1
+        assert gw.config.audit_log.total_denied == 1
+        entry = gw.config.audit_log.denied()[0]
+        assert entry.client_id == "anonymous"
+        assert entry.tool_name == "read_file"
+        assert entry.allowed is False
+
+    def test_require_auth_denies_missing_token_argument(self):
+        """`token` defaults to "", so omitting it entirely must also deny."""
+        auth = ApiKeyAuthProvider()
+        auth.add_key("sk-valid")
+        gw = EnterpriseGateway(GatewayConfig(auth_provider=auth))
+
+        result = gw.check_request("read_file", {"path": "/tmp"}, "anonymous")
+
+        assert result.allowed is False
+        assert result.status_code == 401
+
+    def test_require_auth_allows_valid_token(self):
+        auth = ApiKeyAuthProvider()
+        auth.add_key("sk-valid")
+        gw = EnterpriseGateway(GatewayConfig(auth_provider=auth))
+
+        result = gw.check_request(
+            tool_name="read_file",
+            params={"path": "/tmp"},
+            client_id="alice",
+            token="sk-valid",
+        )
+
+        assert result.allowed is True
+        assert result.status_code == 200
+        assert gw.config.audit_log.total_denied == 0
+
+    def test_require_auth_denies_invalid_token(self):
+        auth = ApiKeyAuthProvider()
+        auth.add_key("sk-valid")
+        gw = EnterpriseGateway(GatewayConfig(auth_provider=auth))
+
+        result = gw.check_request(
+            tool_name="read_file",
+            params={"path": "/tmp"},
+            client_id="alice",
+            token="sk-wrong",
+        )
+
+        assert result.allowed is False
+        assert result.status_code == 401
+        assert result.reason == "Invalid API key"
+
+    def test_no_require_auth_allows_empty_token(self):
+        """require_auth=False stays an open passthrough."""
+        gw = EnterpriseGateway(GatewayConfig(require_auth=False))
+
+        result = gw.check_request("read_file", {"path": "/tmp"}, "anonymous", "")
+
+        assert result.allowed is True
+        assert result.status_code == 200
+        assert gw.config.audit_log.total_denied == 0
+
     def test_rate_limit(self):
         limiter = RateLimiter()
         limiter.set_limit("bob", 1, 60)
