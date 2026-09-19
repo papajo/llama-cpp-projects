@@ -110,3 +110,58 @@ embed `http://127.0.0.1:8081` nomic-embed-text-v1.5 Q8_0, n_embd 768, n_ctx 2048
 - **Cause:** model capacity plus the server's default sampling
   (`temperature 0.8`, `top_k 40`, `top_p 0.95` per `/props`). `ignore_eos`
   suppresses the EOS token so generation always runs to `max_tokens`.
+
+## 7. `cache_hit_ratio` was structurally always 0.0 — REAL BUG (fixed)
+
+- **Project / test:** `4.3-prompt-cache-chunking` — `prompt_cache_chunking/cache_sim.py::simulate_cache`,
+  vacuously "covered" by `tests/test_cache_sim.py`.
+- **What the mock asserted:** nothing falsifiable. This project opens no
+  sockets, so there is no canned HTTP response — but its assertions were
+  tautological:
+  `assert result.total_tokens > result.cached_tokens or True` can never fail,
+  and `assert 0.0 <= result.cache_hit_ratio <= 1.0` / `cached_tokens >= 0` are
+  both satisfied by a constant 0.
+- **What the real behaviour was:** the chunk-level cache-hit branch was dead
+  code. `chunk_prefix = f"{prefix}|{idx}"` was *tested* against
+  `seen_prefixes` but only the bare `prefix` was ever *added* to it, so
+  `chunk_prefix` could never match. Worse, `prefix` embeds the query, and all
+  10 default-corpus queries are unique, so the system+query branch never fired
+  either. Net effect: `cached_tokens == 0` and `cache_hit_ratio == 0.0` for
+  every strategy, every run — the project's headline metric measured nothing,
+  and the whole strategy comparison was vacuous.
+- **What the real server returned (ground truth for the fix):** three prompts
+  sharing a system prompt plus an identical chunk block, differing only in the
+  trailing question, reported
+  `usage.prompt_tokens_details.cached_tokens` = 9, then **135**, then **135**
+  out of ~145 `prompt_tokens`. `timings.cache_n` carries the same number. So
+  llama.cpp really does reuse a shared prefix across *different* queries —
+  exactly what the docstring promised and the code failed to model.
+- **Cause:** not a server flag — a missing `seen_prefixes.add(...)` plus a
+  cache key that included the query. Fixed by keying the chunk region on the
+  cumulative chunk sequence (what a KV cache actually prefix-matches on) and
+  recording it. Hit ratios went from 0.0000 to ~0.19 across all four
+  strategies; all 24 pre-existing tests still pass. The tautological assertion
+  was made falsifiable and 3 regression tests added.
+- **Covered live by:** `test_live_cache.py::test_shared_prefix_is_reused_across_different_queries`,
+  `::test_more_shared_prefix_means_more_cached_tokens`,
+  `::test_simulated_hit_ratio_is_non_degenerate`.
+
+## 8. `chars // 4` over-estimates real token counts by ~20-26%
+
+- **Project / test:** `4.3-prompt-cache-chunking` — `simulate_cache` counts
+  every span as `max(1, len(text) // 4)`; no offline test compares this to a
+  tokenizer.
+- **What the mock asserted:** that the estimate *is* the token count — token
+  totals are reported as `total_tokens` in the markdown/JSON reports with no
+  caveat.
+- **What the real server returned:** via `POST /tokenize` with the SmolLM2
+  vocab — system prompt: 66 chars, estimated 16, **actual 13**; a chunk block:
+  559 chars, estimated 139, **actual 110**. Consistently ~20-26% high.
+- **Cause:** no flag; `chars/4` is an English-average heuristic and the real
+  count depends entirely on the loaded model's vocab (SmolLM2 `n_vocab` 49152
+  on the chat server vs 30522 on nomic-embed, so the two servers tokenize the
+  same string differently). Left as-is deliberately — every strategy shares the
+  estimator, so cross-strategy *ratios* remain valid — but now documented in
+  the code and pinned by a live test.
+- **Covered live by:** `test_live_cache.py::test_chars_over_four_overestimates_real_tokens`,
+  `::test_estimator_is_monotonic_in_real_tokens`.
