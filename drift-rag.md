@@ -325,3 +325,33 @@ only coverage those two methods have.
   by design. The mock stays minimal since the parser reads only `content`, but
   the live test now pins the real shape and asserts the grammar was echoed back.
 - **Covered live by:** `test_live_grammar.py::test_native_completion_response_shape`.
+
+## 16. Vision is unsupported, and fails with 500 rather than 501
+
+- **Project / test:** `2.3-multimodal-doc-agent` — `tests/test_extraction_chain.py`
+  (all mocked vision paths), now documented by `tests/test_live_vision.py`.
+- **What the mock asserted:** that `/v1/chat/completions` accepts a multimodal
+  content-parts list (`{"type": "image_url", "image_url": {"url": "data:..."}}`)
+  and returns a normal text completion describing the image.
+- **What the real server returned:** HTTP **500** —
+  `{"error":{"code":500,"message":"image input is not supported - hint: if this
+  is unexpected, you may need to provide the mmproj","type":"server_error"}}`.
+  `/props` confirms `modalities: {vision: false, video: false, audio: false}`.
+  Note the **inconsistency**: llama-server reports missing *embeddings* and
+  missing *reranking* as `501 / not_supported_error`, but missing *vision* as
+  `500 / server_error`. Anything switching on the status code to distinguish
+  "capability absent" from "server broke" will misclassify this one.
+- **Cause:** no multimodal projector is loaded — needs `--mmproj` plus a vision
+  GGUF. SmolLM2-360M-Instruct is a text-only model, so this is not fixable by a
+  flag alone on this build. Unsupported on CPU; the two extraction-chain tests
+  are marked `xfail(strict=True, raises=httpx.HTTPStatusError)` so they will
+  start failing (and demand attention) the moment vision is enabled.
+- **Verified the failure is loud, not silent:** `invoke_with_images` propagates
+  `httpx.HTTPStatusError` rather than dropping the image and answering from the
+  text alone — which would have produced plausible output with the image
+  ignored, a much more dangerous outcome than an exception.
+- **Non-vision paths do work live** and are covered: the text-only `_generate`
+  path, and the multimodal envelope with an empty image list (which the server
+  accepts, proving the request shape itself is valid and only the image block is
+  refused). Real PNGs are loaded from disk by the project's own `ImageLoader`,
+  including the resize path, and round-tripped back through base64.
