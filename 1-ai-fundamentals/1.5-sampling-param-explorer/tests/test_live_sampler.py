@@ -142,3 +142,27 @@ def test_pipeline_runs_the_servers_own_sampler_order(real_logprobs, chat_base_ur
     assert pytest.approx(sum(final), abs=1e-6) == 1.0
     assert len([p for p in final if p > 0]) <= 5  # top_k=5 bounds the support
     assert len(out["snapshots"]) == 4
+
+
+@pytest.mark.live
+def test_aggressive_truncation_never_yields_nan(real_logprobs):
+    """A sampler chain must not collapse a real distribution to NaN.
+
+    Regression guard: softmax([-inf]*n) returned all-NaN, because
+    `l - max_l` is inf-inf and the `total <= 0` fallback cannot catch NaN.
+    Typical sampling could empty the candidate set and trigger exactly that.
+    """
+    pipeline = SamplingPipeline(real_logprobs)
+    for typical_p in (0.2, 0.5, 0.95, 0.99):
+        out = pipeline.run(
+            temperature=1.0,
+            top_p=typical_p,
+            sampler_sequence="typ",
+        )
+        final = out["final_probs"]
+        assert all(math.isfinite(p) for p in final), (
+            f"typical_p={typical_p} produced non-finite probs"
+        )
+        assert math.isfinite(out["summary"]["final_entropy"])
+        assert out["summary"]["final_entropy"] >= 0
+        assert any(p > 0 for p in final), "candidate set was emptied"

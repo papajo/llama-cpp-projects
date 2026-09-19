@@ -231,3 +231,24 @@ Real servers used:
   (`cache_n > 0`, the thing the code actually controls) and asserts only
   that `speedup_factor` is finite and positive. No project code was changed
   to chase a favourable ratio.
+
+## 11. `softmax` returned NaN when every logit was masked (pre-existing flake)
+
+- **Project / test**: `1-ai-fundamentals/1.5-sampling-param-explorer` —
+  `tests/test_sampler.py::test_full_pipeline` (offline, was intermittently
+  failing) and `tests/test_live_sampler.py::test_aggressive_truncation_never_yields_nan`
+- **What the mock asserted**: `assert result["summary"]["final_entropy"] >= 0`
+  against the randomly generated "flat" distribution preset. It failed roughly
+  one run in three with `assert nan >= 0`.
+- **What was actually happening**: not server drift — a latent numerical bug,
+  surfaced here because the preset's generator is random. `apply_typical`
+  could zero every candidate; the pipeline then rebuilt logits as all `-inf`;
+  `softmax` computed `max_l = -inf` and `l - max_l` = `inf - inf` = `NaN`.
+  Its own documented fallback (`# All logits are -inf: return uniform`) was
+  unreachable, because the guard is `if total <= 0` and `NaN <= 0` is `False`.
+- **Cause**: no llama-server flag involved; pure arithmetic.
+- **Fixed**: `softmax` now checks `math.isfinite(max_l)` *before* subtracting
+  and returns the uniform distribution, which is what the existing comment
+  always intended. Separately, `apply_typical` now keeps the most likely
+  token when its threshold would empty the candidate set — real samplers
+  never return an empty set. Offline test now passes 8/8 consecutive runs.
