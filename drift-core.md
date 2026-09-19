@@ -343,3 +343,52 @@ Real servers used:
 - **Classification**: server behaviour, no code change. Pinned because it is
   the failure mode behind entries 13 and 14: a misspelled or removed
   sampler name in an ablation grid yields a clean run that measured nothing.
+
+## 17. SmolLM2's chat template injects its own default system turn
+
+- **Project / test**: `3-prompt-engineering/3.3-chat-template-tester` —
+  `tests/test_live_templates.py::test_server_injects_a_default_system_turn_when_none_is_given`
+- **What the mock asserted**: nothing about the server — 3.3 is pure
+  client-side string formatting and never opens a socket, so the offline
+  suite (68 tests) has no server contract at all.
+- **What the real server returned**: `POST /apply-template` with a single
+  user turn renders
+  `<|im_start|>system\nYou are a helpful AI assistant named SmolLM, trained by Hugging Face<|im_end|>\n<|im_start|>user\n…`
+  — a system block the caller never supplied. Supplying *any* system
+  message suppresses it.
+- **Cause**: the model's own Jinja `chat_template` (visible in `/props`)
+  begins
+  `{% if loop.first and messages[0]['role'] != 'system' %}{{ '<|im_start|>system\n…' }}{% endif %}`.
+  Not a llama-server flag — it ships inside the GGUF.
+- **Classification**: no defect. A client-side ChatML renderer cannot know
+  a given model's default system string. The project's `chatml` render is
+  byte-identical to `/apply-template` whenever a system message is
+  supplied; the live tests pin both that equality and this one exception.
+
+## 18. `estimate_tokens()` is a heuristic, not a tokenizer
+
+- **Project / test**: `3-prompt-engineering/3.3-chat-template-tester` —
+  `tests/test_live_templates.py::test_token_estimate_is_only_an_estimate`
+- **What the mock asserted**: the offline tests treat `estimated_tokens`
+  as a plain integer property.
+- **What the real server returned**: `POST /tokenize` gives the true count
+  from the model's vocabulary; `estimate_tokens()` is `len(text) // 4` and
+  does not equal it.
+- **Classification**: no defect — it is documented as an estimate. Pinned
+  with an order-of-magnitude bound (within 4x either way) so the figure is
+  never mistaken for a measurement, and so a future tokenizer change that
+  blows past that band is caught.
+
+## 19. Tool calling unsupported by this model's chat template
+
+- **Project / test**: `3-prompt-engineering/3.3-chat-template-tester` —
+  `tests/test_live_templates.py::test_tool_calling_is_unsupported_by_this_chat_template`
+- **What the real server returned**: `/props` `chat_template_caps` reports
+  `supports_tools: false` and `supports_tool_calls: false` (also
+  `supports_parallel_tool_calls: false`, `supports_typed_content: false`).
+  `supports_system_role: true`, which the byte-equality tests depend on.
+- **Cause**: SmolLM2's chat template has no tool/function-calling section.
+  Not a CPU or build limitation — a property of the model's template.
+- **Classification**: unsupported by this model. No tool-calling assertions
+  were written; the capability flags are asserted directly so the gap is
+  explicit rather than silently skipped.
