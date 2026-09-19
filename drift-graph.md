@@ -185,3 +185,89 @@ test mocked the same `gpt-4` body.
 `ModelRegistry`. The live tests use the same pattern (`fresh_server_registry`),
 which is required there — otherwise a cached offline registry would satisfy the
 live assertions without a single real request.
+
+---
+
+## 7. 6.1-slots-metrics-server — `/metrics` is unavailable on this build
+
+**Classification: unsupported (llama-server flag not enabled) — xfail, not faked.**
+
+**Test:** `tests/test_live_metrics.py::test_llamacpp_metrics_endpoint` (xfail,
+`strict=True`), with the gap asserted positively by
+`test_llamacpp_metrics_really_is_501`
+
+**What the mock asserted:** nothing — `metrics_server` never calls
+llama-server. Worth recording anyway, because the project's name invites
+someone to add a `/metrics` scrape and assume it works.
+
+**What the real server returned:** HTTP 501
+```json
+{"error": {"code": 501,
+           "message": "This server does not support metrics endpoint. Start it with `--metrics`",
+           "type": "not_supported_error"}}
+```
+`/props` corroborates: `endpoint_metrics: false`.
+
+**Cause:** the `--metrics` flag. llama-server only registers the Prometheus
+`/metrics` handler when started with it; this instance was not. It is a startup
+flag, not a CPU/GPU limitation — but it cannot be enabled without restarting the
+server, so no code change can reach it.
+
+The xfail is `strict=True` deliberately: if someone restarts llama-server with
+`--metrics`, the test XPASSes, which pytest reports as a failure and forces a
+real assertion to be written here.
+
+---
+
+## 8. 6.1-slots-metrics-server — `/slots` is a bare LIST, not a dict
+
+**Test:** `tests/test_live_metrics.py::test_llamacpp_slots_endpoint_shape`
+
+**What a mock would assert:** a wrapper object, e.g. `{"slots": [...]}` —
+the natural guess, and the shape most other llama-server endpoints use
+(`/v1/models` wraps in `data`, `/v1/embeddings` wraps in `data`).
+
+**What the real server returned:** a top-level JSON **array**:
+```json
+[{"id": 0, "n_ctx": 2048, "speculative": false, "is_processing": false,
+  "id_task": 1967, "n_prompt_tokens": 205, "n_prompt_tokens_processed": 0,
+  "n_prompt_tokens_cache": 0,
+  "params": {"seed": 4294967295, "temperature": 0.0, "top_k": 40,
+             "top_p": 0.949999988079071, "min_p": 0.05000000074505806,
+             "repeat_last_n": 64, "repeat_penalty": 1.0, ...}}, ...]
+```
+Three slots (`id` 0-2), matching `/props` `total_slots: 3`. Any code doing
+`body["slots"]` gets a `TypeError`.
+
+**Cause:** `/slots` is a llama.cpp-native endpoint, not an OpenAI-compatible
+one, so it does not follow the `{"object": "list", "data": [...]}` convention.
+It is gated on `--slots` (`/props` reports `endpoint_slots: true` here).
+Slot count comes from `--parallel` / `-np` (3 on this instance). Note the
+floats are float32-rounded (`0.949999988079071`, not `0.95`), so exact
+equality against `0.95` would fail.
+
+**Note on scope:** `metrics_server/collector.py` reports *host* CPU/memory/disk
+via psutil and has no llama-server integration at all, despite the project
+name. There is no project code path to fix here; these two entries document the
+real endpoint contract so the merged REAL_VS_MOCK.md can carry it.
+
+---
+
+## 9. All 6-mcp projects — SmolLM2 cannot do tool calling
+
+**Classification: unsupported (model chat template) — affects any MCP→tool round trip.**
+
+`/props` → `chat_template_caps`:
+```json
+{"supports_tools": false, "supports_tool_calls": false,
+ "supports_parallel_tool_calls": false, "supports_object_arguments": false,
+ "supports_typed_content": false, "supports_reasoning_effort": false,
+ "supports_string_content": true, "supports_system_role": true}
+```
+
+**Cause:** the model's bundled Jinja chat template has no tool/function-calling
+section, so llama-server advertises no tool support. Passing `tools=[...]` to
+this server cannot produce `tool_calls`. This is a property of the SmolLM2-360M
+template, not of any project's code, so no live test drives an MCP tool through
+the model. The MCP tools in 6.1/6.3 are therefore called directly (as the
+offline tests do) rather than via model-chosen invocation.
