@@ -191,3 +191,75 @@ embed `http://127.0.0.1:8081` nomic-embed-text-v1.5 Q8_0, n_embd 768, n_ctx 2048
   not just index), `::test_non_isolated_baseline_does_leak`.
 
 **No code defects found in 4.4** — isolation held on real vectors in every path.
+
+## 10. The `model` field is ignored; the response reports the loaded model
+
+- **Project / test:** `2.1-langchain-router-failover` — `tests/test_router.py`
+  (`make_fake_response`), whose whole premise is alias-based routing.
+- **What the mock asserted:** the canned responses are built by the test, so an
+  alias like `"coder"` round-trips unchallenged. Nothing checks what the server
+  does with an unrecognised alias.
+- **What the real server returned:** llama-server **silently ignores** the
+  `model` field. Asking for `model: "coder"` returns
+  `model: "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF:Q8_0"` with HTTP 200 — no
+  404, no error. So a mocked test asserting that an unknown model id produces
+  an error would be asserting behaviour the real server does not have.
+- **Cause:** a plain `llama-server` loads exactly one model (`-m`/`-hf`) and
+  serves every request from it; the field only matters to a multi-model
+  front-end (llama-swap, or router mode with several `--model-alias` entries).
+  Nothing to fix — the router's own `ModelNotAvailableError` guard catches
+  unregistered aliases *client-side*, before any request, which is the only
+  thing standing between a typo and a silently wrong model.
+- **Covered live by:** `test_live_router.py::test_server_ignores_the_model_field`,
+  `::test_unregistered_alias_is_rejected_before_any_request`.
+
+## 11. Real SSE opens with `content: null` and closes with an empty delta
+
+- **Project / test:** `2.1-langchain-router-failover` — `tests/test_router.py::test_stream_basic`
+  via `make_fake_stream_chunk`.
+- **What the mock asserted:** every chunk is `{"delta": {"content": "<text>"}}`,
+  with the terminal chunk modelled as `content: ""` plus a `finish_reason`.
+- **What the real server returned:** three distinct chunk shapes —
+  1. a role-priming first chunk: `{"delta": {"role": "assistant", "content": null}}`
+     — `content` is JSON **null**, not `""`;
+  2. text chunks: `{"delta": {"content": "..."}, "finish_reason": null}`;
+  3. a terminal chunk with **no `content` key at all**:
+     `{"delta": {}, "finish_reason": "length"}`, carrying a `timings` block;
+  then a literal `data: [DONE]`. Every chunk also has `object:
+  "chat.completion.chunk"`, `id`, `created`, `model` and `system_fingerprint`.
+- **Cause:** llama-server's OpenAI-compatible streaming handler; the leading
+  role chunk and trailing stats chunk are standard for it. `_parse_stream_chunk`
+  survives all three only because `delta.get("content", "")` returns `None` for
+  case 1 and `""` for case 3, and `if not content` is falsy for both — i.e. the
+  `null` case works by luck rather than by design. Note the consequence:
+  because the terminal chunk is dropped, **`finish_reason` is never surfaced
+  when streaming**, only when using `invoke()`.
+- **Also found (framework, not server):** LangChain's own
+  `BaseChatModel.stream` appends a final empty `AIMessageChunk` with
+  `chunk_position="last"`, so a live consumer sees one `content == ""` chunk
+  that the router never produced.
+- **Covered live by:** `test_live_router.py::test_stream_yields_text_chunks`.
+
+## 12. Cold-start retry (503/504) is not reproducible on this build
+
+- **Project / test:** `2.1-langchain-router-failover` — `tests/test_router.py::TestColdStart*`
+  (six offline tests) and `test_cold_start_then_success` / `test_cold_start_exhausted`.
+- **What the mock asserted:** the router retries with exponential backoff when
+  the server answers 503/504 or an error body containing "cold"/"sleep"/
+  "unavailable", then succeeds or raises `ModelColdStartError`.
+- **What the real server returned:** always HTTP 200. A plain single-model
+  llama-server never emits 503/504 for a sleeping model — the model is resident
+  from startup, so there is nothing to wake.
+- **Cause:** needs a front-end that unloads idle models — llama-swap, or router
+  mode with `--sleep-idle-seconds`. Unsupported in this CPU-only single-model
+  setup, so the path stays mock-only; the live test asserts only that the
+  server is healthy and that a real 400 is *not* misread as a cold start
+  (verified: `{"error":{"code":400,"type":"invalid_request_error"}}` contains
+  none of the cold-start keywords, so it raises instead of burning 3 retries).
+- **Covered live by:** `test_live_router.py::test_cold_start_path_is_not_reproducible_live`,
+  `::test_real_400_is_raised_not_treated_as_cold_start`.
+
+**Note (test-infra):** `pytest-asyncio` is not installed in the shared venv, so
+2.1's live async tests drive `_agenerate`/`_astream` with `asyncio.run()` from
+sync tests. The offline suite covers no async path at all, so these are the
+only coverage those two methods have.
