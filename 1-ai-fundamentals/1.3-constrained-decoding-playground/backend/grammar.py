@@ -149,15 +149,57 @@ class GBNFParser:
         if not any(r.is_root for r in rules):
             errors.append("No 'root' rule defined (required)")
 
-        # Check for common issues
+        # Check for common issues. A GBNF definition has three lexical
+        # contexts - bare, inside a "string literal", and inside a
+        # [character class] - and a delimiter only counts in the bare one.
         for rule in rules:
-            # Check for unmatched brackets
-            opens = rule.definition.count("(")
-            closes = rule.definition.count(")")
-            if opens != closes:
+            depth_paren = depth_bracket = 0
+            in_quote = in_class = escaped = False
+            stray_close = False
+
+            for ch in rule.definition:
+                if escaped:
+                    escaped = False
+                    continue
+                if ch == "\\":
+                    escaped = True
+                    continue
+
+                if in_quote:
+                    if ch == '"':
+                        in_quote = False
+                    continue
+                if in_class:
+                    if ch == "]":
+                        in_class = False
+                        depth_bracket -= 1
+                    continue
+
+                if ch == '"':
+                    in_quote = True
+                elif ch == "[":
+                    in_class = True
+                    depth_bracket += 1
+                elif ch == "]":
+                    stray_close = True
+                elif ch == "(":
+                    depth_paren += 1
+                elif ch == ")":
+                    depth_paren -= 1
+                    if depth_paren < 0:
+                        stray_close = True
+
+            if in_quote:
                 errors.append(
-                    f"Rule '{rule.name}': mismatched parentheses "
-                    f"({opens} open, {closes} close)"
+                    f"Rule '{rule.name}': unterminated string literal"
+                )
+            if depth_paren != 0 or stray_close:
+                errors.append(
+                    f"Rule '{rule.name}': mismatched parentheses"
+                )
+            if in_class or depth_bracket != 0:
+                errors.append(
+                    f"Rule '{rule.name}': unterminated character class"
                 )
 
         return errors
@@ -187,9 +229,11 @@ class GrammarDebugger:
           - timings: timing info
           - n_probs (if requested): list of per-token probability data
         
-        Each n_probs entry: { "id": token_id, "text": token_text,
-                               "logprob": float, "prob": float,
-                               "top_logprobs": [{"id":..., "logprob":...}, ...] }
+        Each n_probs entry as llama-server sends it:
+          { "id": token_id, "token": token_text, "bytes": [int, ...],
+            "logprob": float,
+            "top_logprobs": [{"id":..., "token":..., "bytes":...,
+                              "logprob":...}, ...] }
         """
         content = completion_data.get("content", "")
         n_probs = completion_data.get("completion_probabilities", [])
@@ -204,8 +248,10 @@ class GrammarDebugger:
 
         for i, prob_entry in enumerate(n_probs):
             if isinstance(prob_entry, dict):
-                top = prob_entry.get("top_logprobs", prob_entry.get("top_logprobs", []))
-                chosen_token = prob_entry.get("text", "")
+                top = prob_entry.get("top_logprobs", [])
+                # llama-server names this "token" (matching the OpenAI
+                # logprobs schema); "text" is only for older payloads.
+                chosen_token = prob_entry.get("token", prob_entry.get("text", ""))
                 chosen_id = prob_entry.get("id", -1)
                 chosen_logprob = prob_entry.get("logprob", 0.0)
             else:

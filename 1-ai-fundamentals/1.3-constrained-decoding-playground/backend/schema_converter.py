@@ -84,14 +84,29 @@ class SchemaConverter:
             return "any"
         return "string"
 
+    @staticmethod
+    def _sanitise_name(base: str) -> str:
+        """Coerce a name into the identifier subset GBNF accepts.
+
+        llama.cpp's GBNF parser only allows ``[a-zA-Z0-9-]`` in a rule name.
+        Underscores in particular are a parse error, and JSON Schema property
+        names routinely contain them.
+        """
+        cleaned = "".join(
+            ch if (ch.isascii() and (ch.isalnum() or ch == "-")) else "-"
+            for ch in base
+        ).strip("-")
+        return cleaned or "rule"
+
     def _fresh_name(self, base: str) -> str:
-        """Generate a unique rule name."""
+        """Generate a unique, GBNF-legal rule name."""
+        base = self._sanitise_name(base)
         if base not in self._used_names:
             self._used_names.add(base)
             return base
         counter = self._rule_counters.get(base, 1)
         self._rule_counters[base] = counter + 1
-        name = f"{base}_{counter}"
+        name = f"{base}-{counter}"
         self._used_names.add(name)
         return name
 
@@ -130,7 +145,7 @@ class SchemaConverter:
         for prop_name, prop_schema in properties.items():
             is_required = prop_name in required
             prop_type = self._resolve_type(prop_schema)
-            prop_rule_name = self._fresh_name(f"prop_{prop_name}")
+            prop_rule_name = self._fresh_name(f"prop-{prop_name}")
             prop_rule = self._type_to_rule(prop_schema, prop_type, prop_rule_name)
             self._rules[prop_rule_name] = prop_rule
 
@@ -144,13 +159,13 @@ class SchemaConverter:
 
         # Build object with comma-separated properties
         if len(prop_parts) == 1:
-            body = r'"{" " " ' + prop_parts[0] + r' " "}"'
+            body = r'"{" " " ' + prop_parts[0] + r' " " "}"'
         else:
             body = r'"{" " " '
             body += prop_parts[0]
             for p in prop_parts[1:]:
                 body += f' "," " " {p}'
-            body += r' " "}"'
+            body += r' " " "}"'
 
         return body
 
@@ -158,7 +173,7 @@ class SchemaConverter:
         """Convert an array schema to GBNF."""
         items = schema.get("items", {})
         item_type = self._resolve_type(items)
-        item_rule_name = self._fresh_name(f"{rule_name}_item")
+        item_rule_name = self._fresh_name(f"{rule_name}-item")
         item_rule = self._type_to_rule(items, item_type, item_rule_name)
         self._rules[item_rule_name] = item_rule
 
@@ -173,21 +188,21 @@ class SchemaConverter:
             return (
                 r'"[" " " ' +
                 f'( {item_rule_name} ( "," " " {item_rule_name} )* )?' +
-                r' " "]"'
+                r' " " "]"'
             )
         else:
             elements = f'{item_rule_name}'
             for _ in range(min_items - 1):
                 elements += f' "," " " {item_rule_name}'
             elements += f' ( "," " " {item_rule_name} )*'
-            return r'"[" " " ' + elements + r' " "]"'
+            return r'"[" " " ' + elements + r' " " "]"'
 
     def _string_rule(self, schema: dict) -> str:
         """Convert a string schema to GBNF."""
         enum_vals = schema.get("enum", [])
         if enum_vals:
             alternatives = " | ".join(
-                f'"\\"{self._escape_string(v)}\\"' for v in enum_vals
+                f'"\\"{self._escape_string(v)}\\""' for v in enum_vals
             )
             return f"( {alternatives} )"
 
@@ -197,7 +212,7 @@ class SchemaConverter:
             return self._pattern_to_rule(pattern)
 
         # Default string: any characters (basic)
-        return r'"\\"" ( [^"\\\\] | "\\\\" . )* "\\""'
+        return r'"\"" ( [^"\\] | "\\" . )* "\""'
 
     def _number_rule(self, schema: dict, type_name: str) -> str:
         """Convert a number/integer schema to GBNF."""
@@ -247,8 +262,8 @@ class SchemaConverter:
         if pattern == r"^\d{3}-\d{3}-\d{4}$":
             return r'[0-9]{3} "-" [0-9]{3} "-" [0-9]{4}'
         if pattern == r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$":
-            return r'[a-zA-Z0-9._%+-] "+" "@" "+" [a-zA-Z0-9.-] "+" "." [a-zA-Z]{2,4}'
+            return r'[a-zA-Z0-9._%+-]+ "@" [a-zA-Z0-9.-]+ "." [a-zA-Z]{2,4}'
         if pattern == r"^https?://":
             return r'"http" ("s")? "://" [a-zA-Z0-9.-]+ ( "." [a-zA-Z]{2,4} )?'
         # Fallback: allow anything
-        return r'"\\"" ( [^"\\\\] | "\\\\" . )* "\\""'
+        return r'"\"" ( [^"\\] | "\\" . )* "\""'

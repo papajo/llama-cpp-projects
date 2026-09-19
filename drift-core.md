@@ -119,3 +119,57 @@ Real servers used:
 - **Fixed**: read `token` first, falling back to `text` for older payloads.
   Mock data corrected to the real shape and the offline test now asserts
   `token_text`.
+
+## 7. SchemaConverter emitted GBNF that llama.cpp cannot parse
+
+- **Project / test**: `1-ai-fundamentals/1.3-constrained-decoding-playground` —
+  `tests/test_live_grammar.py::test_json_schema_grammar_round_trip`
+- **What the mock asserted**: `tests/test_grammar.py` only checked that the
+  generated text *contained* substrings — `assert "root ::=" in gbnf`,
+  `assert "location" in gbnf or "prop_location" in gbnf`. It never fed the
+  grammar to a parser, so four independent syntax defects went unnoticed.
+- **What the real server returned**: `HTTP 400`
+  `{"error":{"code":400,"message":"Failed to initialize samplers: failed to
+  parse grammar","type":"invalid_request_error"}}` for every object schema.
+- **Cause**: llama.cpp's GBNF parser (`/completion` `grammar` field). Four
+  separate defects, each confirmed in isolation against the server:
+  1. **Rule names may only contain `[a-zA-Z0-9-]`.** The converter generated
+     `prop_n`, `<rule>_item`, `<rule>_opt0` and `<base>_<counter>`.
+     Verified: `prop-n ::= "1"` parses, `prop_n ::= "1"` is a 400.
+  2. **`" "}"` is not a literal.** Object/array rules ended with
+     `' " "}"'`, which lexes as the literal `" "` then a bare `}` and a
+     dangling quote. Needs `" " "}"` (likewise `" " "]"`).
+  3. **The default string rule was escaped one level too deep** —
+     `"\\"" ( [^"\\\\] | "\\\\" . )* "\\""` instead of
+     `"\"" ( [^"\\] | "\\" . )* "\""`.
+  4. **Enum alternatives lost their closing quote** — produced
+     `( "\"r\" | "\"g\" )` instead of `( "\"r\"" | "\"g\"" )`.
+  Also fixed alongside: the `email` pattern emitted `"+"` as a *literal plus*
+  (`[a-zA-Z0-9._%+-] "+" "@" ...`) rather than the repetition operator.
+- **Consequence**: JSON-Schema-constrained decoding — the project's headline
+  feature — was non-functional against any real llama-server.
+- **Fixed**: names sanitised to the legal subset at the single choke point
+  (`_fresh_name`), literals separated, string/enum/email rules corrected.
+  The live test now round-trips five schema shapes (boolean, enum, string
+  with an underscored key, array, two-property) and parses the output as JSON.
+- **Note (model too small, not a bug)**: an *unbounded* integer or the email
+  char-class lets SmolLM2-360M emit digits until `n_predict` runs out. The
+  grammar is accepted and correct; the model is simply too weak to stop. The
+  live tests therefore use bounded schemas only.
+
+## 8. `GBNFParser.validate` accepted grammars the server rejects
+
+- **Project / test**: `1-ai-fundamentals/1.3-constrained-decoding-playground` —
+  `tests/test_live_grammar.py::test_invalid_grammar_is_rejected_by_server`
+- **What the mock asserted**: the offline tests only exercised balanced
+  parentheses.
+- **What the real server returned**: `HTTP 400 ... failed to parse grammar`
+  for `root ::= [0-9`, while `validate()` returned `[]` ("valid").
+- **Cause**: `validate()` compared only `count("(")` vs `count(")")`. It
+  ignored character-class brackets and string literals entirely — so it both
+  missed unterminated `[`/`"` *and* would have mis-flagged a grammar whose
+  literals contain a delimiter, e.g. `root ::= "(" "[" "]" ")"`.
+- **Fixed**: the checker now walks the definition through three lexical
+  contexts (bare / string literal / character class) honouring backslash
+  escapes, and reports unterminated literals, unterminated classes and stray
+  closers. `root ::= "(" "[" "]" ")"` still validates clean.
