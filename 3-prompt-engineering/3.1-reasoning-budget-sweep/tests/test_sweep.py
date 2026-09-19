@@ -80,7 +80,14 @@ class TestRunSweep:
         httpx_mock.add_response(
             method="POST",
             url="http://127.0.0.1:8080/v1/chat/completions",
-            json={"error": "bad request"},
+            # Real llama-server error shape: a nested object, not a string.
+            json={
+                "error": {
+                    "code": 400,
+                    "message": "'messages' is required",
+                    "type": "invalid_request_error",
+                }
+            },
             status_code=400,
         )
 
@@ -93,6 +100,7 @@ class TestRunSweep:
         assert len(results) == 1
         assert not results[0].is_ok
         assert "HTTP 400" in results[0].error
+        assert "invalid_request_error" in results[0].error
 
     def test_server_error_then_recovers(self, httpx_mock):
         """Server 500 on first attempt, succeeds on retry."""
