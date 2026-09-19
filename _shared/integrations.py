@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -52,8 +53,14 @@ class AdapterBase:
         client: Optional[LLMClient] = None,
         default_model: Optional[str] = None,
     ):
-        self._client = client or get_client(prefer="ollama", auto_start=False)
-        self._default_model = default_model or "llama3.2:latest"
+        self._client = client or get_client(
+            prefer=os.environ.get("LLM_PREFER") or "ollama", auto_start=False
+        )
+        self._default_model = (
+            default_model
+            or os.environ.get("LLM_CHAT_MODEL")
+            or "llama3.2:latest"
+        )
 
     @property
     def connected(self) -> bool:
@@ -148,7 +155,10 @@ class EmbedAdapter(AdapterBase):
         """Get embeddings for a list of texts."""
         if not self._client.connected:
             return _mock_embeddings(texts)
-        return self._client.embed(texts, model="nomic-embed-text:latest")
+        return self._client.embed(
+            texts,
+            model=os.environ.get("LLM_EMBED_MODEL") or "nomic-embed-text:latest",
+        )
 
     def embed_query(self, text: str) -> List[float]:
         """Get embedding for a single query string."""
@@ -334,7 +344,9 @@ def get_adapter(kind: str = "chat", **kwargs) -> AdapterBase:
 
 def live_projects_summary() -> str:
     """Return a summary of all project categories and their LLM status."""
-    client = get_client(prefer="ollama", auto_start=False)
+    client = get_client(
+        prefer=os.environ.get("LLM_PREFER") or "ollama", auto_start=False
+    )
     parts = [
         "╔══════════════════════════════════════════╗",
         "║  🦙  llama-cpp-projects  —  Live Status  ║",

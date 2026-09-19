@@ -33,11 +33,27 @@ logger = logging.getLogger(__name__)
 
 # ── Constants ──────────────────────────────────────────────────────────
 
+def _env_host(backend: str, default: str = "127.0.0.1") -> str:
+    """Host override, e.g. LLAMACPP_HOST / OLLAMA_HOST."""
+    key = backend.upper().replace(".", "").replace("-", "") + "_HOST"
+    return os.environ.get(key) or os.environ.get("LLM_HOST") or default
+
+
+def _env_port(backend: str, default: int) -> int:
+    """Port override, e.g. LLAMACPP_PORT=8082 / OLLAMA_PORT=11434."""
+    key = backend.upper().replace(".", "").replace("-", "") + "_PORT"
+    raw = os.environ.get(key)
+    try:
+        return int(raw) if raw else default
+    except ValueError:
+        return default
+
+
 SERVER_PROFILES: List[Dict[str, Any]] = [
     {
         "name": "ollama",
-        "host": "127.0.0.1",
-        "port": 11434,
+        "host": _env_host("ollama"),
+        "port": _env_port("ollama", 11434),
         "chat_path": "/v1/chat/completions",
         "embed_path": "/v1/embeddings",
         "models_path": "/api/tags",
@@ -46,8 +62,8 @@ SERVER_PROFILES: List[Dict[str, Any]] = [
     },
     {
         "name": "llama.cpp",
-        "host": "127.0.0.1",
-        "port": 8080,
+        "host": _env_host("llamacpp"),
+        "port": _env_port("llamacpp", 8080),
         "chat_path": "/v1/chat/completions",
         "embed_path": "/v1/embeddings",
         "completion_path": "/completion",
@@ -57,8 +73,8 @@ SERVER_PROFILES: List[Dict[str, Any]] = [
     },
     {
         "name": "omlx",
-        "host": "127.0.0.1",
-        "port": 8081,
+        "host": _env_host("omlx"),
+        "port": _env_port("omlx", 8081),
         "chat_path": "/v1/chat/completions",
         "embed_path": "/v1/embeddings",
         "models_path": "/v1/models",
@@ -148,6 +164,9 @@ def detect_server(
         ServerInfo if a server is found, None otherwise.
     """
     profiles = list(SERVER_PROFILES)
+
+    # Environment default, e.g. LLM_PREFER=llama.cpp
+    prefer = prefer or os.environ.get("LLM_PREFER") or None
 
     # Move preferred profile to front
     if prefer:
@@ -308,17 +327,28 @@ def _find_binary(name: str) -> Optional[Path]:
 
 def _find_gguf_model() -> Optional[Path]:
     """Look for a GGUF model in common locations."""
+    env_dir = os.environ.get("LLM_MODELS_DIR")
     search_dirs = [
+        Path(env_dir) if env_dir else None,
+        Path.home() / "Models",          # case-sensitive filesystems
+        Path.home() / "models",
         Path.home() / ".cache" / "llama.cpp",
         Path.home() / ".cache" / "lm-studio" / "models",
-        Path.home() / "models",
         Path("/opt/homebrew/share/llama.cpp/models"),
     ]
+    # Embedding models cannot serve chat; skip them when picking a default.
+    skip = ("embed", "bge-", "minilm", "e5-")
     for d in search_dirs:
-        if d.is_dir():
-            for f in sorted(d.iterdir()):
-                if f.suffix in (".gguf", ".GGUF"):
-                    return f
+        if d is None or not d.is_dir():
+            continue
+        for f in sorted(d.rglob("*")):        # recurse: models live in subdirs
+            if f.suffix.lower() != ".gguf":
+                continue
+            if f.name.startswith("ggml-vocab-"):
+                continue                       # llama.cpp tokenizer fixtures
+            if any(k in f.name.lower() for k in skip):
+                continue
+            return f
     return None
 
 
