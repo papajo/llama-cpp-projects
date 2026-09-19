@@ -198,22 +198,44 @@ class _GGUFParser:
         arch = model.architecture
         prefixes = [f"{arch}.", "llama.", ""]  # fallback chain
 
-        def _get(key: str) -> int:
+        def _lookup(key: str):
+            """First present value for `key` across the prefix chain."""
             for p in prefixes:
                 val = meta.get(f"{p}{key}")
                 if val is not None:
-                    return int(val)
+                    return val
+            return None
+
+        def _get(key: str) -> int:
+            val = _lookup(key)
+            if val is not None:
+                return int(val)
+            # Attention hyper-parameters are namespaced under
+            # `<arch>.attention.*` in GGUF, not directly under `<arch>.`.
+            val = _lookup(f"attention.{key}")
+            if val is not None:
+                return int(val)
             return _KNOWN_SIZES.get(key, 0)
 
         model.embedding_dim = _get("embedding_length")
         model.block_count = _get("block_count")
         model.head_count = _get("head_count")
-        model.head_count_kv = _get("head_count_kv") or model.head_count
+        # A model with no explicit KV head count is plain MHA, so the KV
+        # head count equals the head count. Only fall back to the generic
+        # default when neither is known.
+        kv = _lookup("head_count_kv") or _lookup("attention.head_count_kv")
+        model.head_count_kv = int(kv) if kv is not None else model.head_count
         model.feed_forward_dim = _get("feed_forward_length")
         model.vocab_size = _get("vocab_size")
         model.context_length = _get("context_length")
         model.expert_count = _get("expert_count")
         model.expert_used_count = _get("expert_used_count")
+
+        # GGUF rarely carries an explicit `vocab_size`; the authoritative
+        # figure is the length of the tokenizer's token list.
+        tokens = meta.get("tokenizer.ggml.tokens")
+        if tokens:
+            model.vocab_size = len(tokens)
 
         # Estimate parameter count from dimensions
         model.param_count_b = _GGUFParser._estimate_params(model)

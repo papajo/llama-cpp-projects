@@ -14,13 +14,14 @@ authors = [
     {name = "KV Cache Visualizer Contributors"},
 ]
 
+dependencies = [
+    "numpy>=1.24",
+    "plotly>=5.18",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "pydantic>=2.5",
+    "httpx>=0.27",
+]
+
 [project.scripts]
 kv-cache = "calculator.cli:main"
-
-[dependencies]
-numpy>=1.24
-plotly>=5.18
-fastapi>=0.110
-uvicorn[standard]>=0.27
-pydantic>=2.5
-httpx>=0.27

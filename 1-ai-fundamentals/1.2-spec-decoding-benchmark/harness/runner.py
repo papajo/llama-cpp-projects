@@ -228,7 +228,10 @@ class BenchmarkRunner:
 
                     now = time.time()
 
-                    if "content" in data:
+                    # The final SSE chunk carries stop metadata with an
+                    # empty `content`, so key-presence alone would count one
+                    # phantom token per request.
+                    if data.get("content"):
                         token_count += 1
                         result["tokens"].append(data["content"])
                         result["timestamps"].append(now)
@@ -243,7 +246,9 @@ class BenchmarkRunner:
                         result["draft_total_count"] += data["draft_total"]
 
                     if data.get("stop", False):
-                        result["full_text"] = data.get("content", "")
+                        # The stop chunk's own `content` is empty; the text is
+                        # whatever the streamed token chunks accumulated.
+                        result["full_text"] = "".join(result["tokens"])
                         result["timing"] = data.get("timings", {})
                         break
 

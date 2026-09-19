@@ -141,12 +141,18 @@ DISTRIBUTION_PRESETS: List[DistributionPreset] = [
 
 def softmax(logits: List[float]) -> List[float]:
     """Numerically stable softmax."""
+    n = len(logits)
+    if n == 0:
+        return []
     max_l = max(logits)
+    if not math.isfinite(max_l):
+        # Every logit is -inf (or the input is degenerate). `l - max_l`
+        # would be inf-inf = nan, and the `total <= 0` guard below cannot
+        # catch nan, so handle it up front.
+        return [1.0 / n] * n
     exps = [math.exp(l - max_l) for l in logits]
     total = sum(exps)
     if total <= 0:
-        # All logits are -inf: return uniform
-        n = len(logits)
         return [1.0 / n] * n
     return [e / total for e in exps]
 
@@ -252,6 +258,11 @@ def apply_typical(probs: List[float], p: float) -> List[float]:
             result.append(prob)
         else:
             result.append(0.0)
+    if not any(result):
+        # A truncation sampler must never empty the candidate set; real
+        # samplers always leave at least the most likely token standing.
+        keep = max(range(len(probs)), key=lambda i: probs[i])
+        result[keep] = probs[keep]
     return result
 
 

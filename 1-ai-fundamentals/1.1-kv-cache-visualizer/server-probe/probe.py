@@ -31,13 +31,28 @@ class SlotInfo:
 
     @classmethod
     def from_dict(cls, d: dict) -> "SlotInfo":
+        # Current llama-server reports occupancy as the boolean
+        # `is_processing` and nests decode progress under `next_token`.
+        # Older builds exposed a flat `state` string plus `n_decoded` /
+        # `n_past`, so fall back to those when present.
+        if "state" in d:
+            state = d["state"]
+        elif "is_processing" in d:
+            state = "processing" if d["is_processing"] else "idle"
+        else:
+            state = "unknown"
+
+        next_token = d.get("next_token") or [{}]
+        if isinstance(next_token, dict):
+            next_token = [next_token]
+
         return cls(
             id=d.get("id", -1),
-            state=d.get("state", "unknown"),
+            state=state,
             n_prompt_tokens=d.get("n_prompt_tokens", 0),
             n_predicts=d.get("n_predicts", 0),
-            n_decoded=d.get("n_decoded", 0),
-            n_past=d.get("n_past", 0),
+            n_decoded=d.get("n_decoded", next_token[0].get("n_decoded", 0)),
+            n_past=d.get("n_past", d.get("n_prompt_tokens_cache", 0)),
             prompt=d.get("prompt", ""),
         )
 
