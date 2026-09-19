@@ -422,3 +422,34 @@ Real servers used:
 - **Classification**: mock drift, recorded rather than "fixed" — widening
   every canned body would add noise without changing behaviour. The live
   test asserts the full envelope once, in 3.4, on behalf of all four.
+
+## 21. LLM-as-judge: SmolLM2 cannot produce the rubric's JSON
+
+- **Project / test**: `3-prompt-engineering/3.5-prompt-optimizer-loop` —
+  `tests/test_live_optimizer.py::test_rubric_parse_fallback_is_exercised_by_this_model`
+- **What the mock asserted**: the offline tests patch `urlopen` to return a
+  judge reply of exactly `{"score": 8, "rationale": "..."}`, so
+  `RubricEvaluator` always takes its strict `json.loads` path and yields a
+  clean 0.8. Every offline rubric assertion is really an assertion about
+  that canned string.
+- **What the real server returned**: asked to rate `"The capital of France
+  is Paris."` against expected `"Paris"` and to reply with ONLY a JSON
+  object, SmolLM2-360M replied with the bare word `Paris`. The strict parse
+  fails, the `"score"\s*:\s*(\d+)` regex fails, and the neutral fallback
+  fires — `(5, "Could not parse judge output")`, i.e. a flat 0.5.
+- **Cause**: model capability. Not a flag, not an endpoint, not a build
+  option — a 360M instruct model does not reliably follow a
+  "respond with only JSON" instruction. (Note: the server *does* support
+  `response_format: json_schema` and GBNF `grammar`, either of which would
+  force valid JSON — but using them would be a redesign of the evaluator,
+  not a test fix, so nothing was changed.)
+- **Classification**: model too small. No project code was changed to chase
+  a better score. The live tests assert only the contract that holds
+  regardless of which parse tier fires: the result is a `Score` with
+  `scorer == "rubric"` and a normalised value in [0,1]. Judge *accuracy*
+  is never asserted, and neither is score improvement across iterations.
+- **Knock-on**: `OptimizationLoop` is therefore tested for termination and
+  history well-formedness only. `test_loop_stops_at_max_iterations_without_improving`
+  deliberately encodes the realistic path — the meta-prompt rewrite does
+  not help, the target is never reached, and the loop exits on
+  `max_iterations` rather than on success.
