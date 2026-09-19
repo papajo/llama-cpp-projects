@@ -90,3 +90,98 @@ hand-written clean JSON, so they only ever exercise the happy path.
 
 The offline tests are not wrong to test the JSON path (a larger model would hit
 it), so they are left alone. The live test asserts structure only.
+
+---
+
+## 4. 6.3-model-discovery-router-mgr — mocks invented a multi-model OpenAI catalogue
+
+**Test:** `tests/test_registry.py` (`SAMPLE_MODELS`, `test_discover`,
+`test_list_models`, `test_discover_if_empty`, `test_from_openai_response`),
+`tests/test_server.py` (all four tool tests)
+
+**What the mock asserted:** `/v1/models` returns a four-model catalogue from
+cloud providers, and `discover()` yields 4 `ModelInfo`s:
+```json
+{"data": [
+  {"id": "gpt-4",                  "object": "model", "owned_by": "openai"},
+  {"id": "gpt-3.5-turbo",          "object": "model", "owned_by": "openai"},
+  {"id": "text-embedding-ada-002", "object": "model", "owned_by": "openai"},
+  {"id": "llama-3-70b-instruct",   "object": "model", "owned_by": "meta"}
+]}
+```
+
+**What the real server returned:** one model, `owned_by: "llamacpp"`, a `meta`
+block, and an Ollama-style `models` list beside the OpenAI `data` list:
+```json
+{
+  "models": [{"name": "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF:Q8_0",
+              "capabilities": ["completion"], "details": {"format": "gguf", ...}, ...}],
+  "object": "list",
+  "data": [{"id": "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF:Q8_0",
+            "aliases": ["HuggingFaceTB/SmolLM2-360M-Instruct-GGUF:Q8_0"],
+            "tags": [], "object": "model", "created": 1789829232,
+            "owned_by": "llamacpp",
+            "meta": {"vocab_type": true, "n_vocab": 49152, "n_ctx": 2048,
+                     "n_ctx_train": 8192, "n_embd": 960, "n_params": 361821120,
+                     "size": 384618240, "ftype": "Q8_0"}}]
+}
+```
+The embed server on 8081 is a *separate process* reporting
+`nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0` with `meta.n_embd: 768`.
+No `permission` list is ever sent.
+
+**Cause:** llama-server loads exactly one model per process (`-m` / `-hf`), so
+`/v1/models` is a one-element list by construction — there is no multi-model
+router to discover. The dual payload is deliberate: llama-server serves both
+the OpenAI `/v1/models` contract and Ollama's `/api/tags`-style contract from
+one handler, so `data` and `models` describe the same single model. `meta` is
+llama.cpp-specific (no OpenAI equivalent).
+
+**Fixed:** both test files now mock the real payload and assert one
+`llamacpp`-owned model. The pure routing tests (`test_route_round_robin` etc.)
+still build two-model registries directly — they never touch HTTP, and
+round-robin needs >1 model to mean anything, so they were left alone.
+
+---
+
+## 5. 6.3-model-discovery-router-mgr — `context_length` was never populated
+
+**Classification: real bug — project code fixed.**
+
+**Test:** `tests/test_live_registry.py::test_discover_populates_context_length`
+(failed before the fix: `assert 0 == 2048`)
+
+**What the mock asserted:** nothing. No offline test touched
+`ModelInfo.context_length`, and the mocked payloads had no `meta` block, so the
+gap was invisible offline.
+
+**What the real server returned:** `data[0].meta.n_ctx == 2048`.
+
+**Cause:** `ModelInfo` declares `context_length: int = 0`, but
+`from_openai_response()` only mapped `id`, `object`, `owned_by` and
+`permission`. The field was dead — permanently 0 for every discovered model —
+even though the server supplies the value. llama.cpp reports the loaded context
+window as `meta.n_ctx` (2048 here, vs `n_ctx_train` 8192, because the server
+was started with `--ctx-size 2048`); a plain OpenAI payload has no `meta`, which
+is why the mapping was missed.
+
+**Fixed:** `from_openai_response()` now reads `meta.n_ctx`, defaulting to 0 when
+there is no `meta` block. Regression-covered offline by
+`test_from_openai_response` and `test_from_openai_response_without_meta`.
+
+---
+
+## 6. 6.3-model-discovery-router-mgr — `server._registry` cache leaked across tests
+
+**Classification: real bug (in the offline tests) — fixed.**
+
+`model_router/server.py` holds a module-global `_registry` and every tool calls
+`discover_if_empty()`. `tests/test_server.py` never reset it, so the first test
+to run populated the cache and the remaining three were served from it,
+ignoring their own `urlopen` mock entirely. The suite passed only because every
+test mocked the same `gpt-4` body.
+
+**Fixed:** an `autouse` `reset_registry` fixture gives each test a fresh
+`ModelRegistry`. The live tests use the same pattern (`fresh_server_registry`),
+which is required there — otherwise a cached offline registry would satisfy the
+live assertions without a single real request.
