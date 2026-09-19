@@ -392,3 +392,33 @@ Real servers used:
 - **Classification**: unsupported by this model. No tool-calling assertions
   were written; the capability flags are asserted directly so the gap is
   explicit rather than silently skipped.
+
+## 20. OpenAI-shaped mocks omit most of the real response envelope
+
+- **Project / test**: all four HTTP projects in `3-prompt-engineering`
+  (3.1, 3.2, 3.4, 3.5). Pinned by
+  `3.4-prompt-chaining-workbench/tests/test_live_chain.py::test_real_usage_block_is_richer_than_the_canned_one`
+- **What the mocks assert**: every canned success body across these
+  projects is the same two-key minimum —
+  `{"choices":[{"message":{"content": "..."}}],
+    "usage":{"prompt_tokens":N,"completion_tokens":M}}`
+- **What the real server returns**: that plus
+  `id`, `model`, `created`, `object: "chat.completion"`,
+  `system_fingerprint` (`"b11046-60081bb2b"`), and a llama.cpp-only
+  `timings` block (`prompt_n`, `prompt_ms`, `predicted_n`,
+  `predicted_per_second`, `cache_n`, …). Inside `choices[0]` there is also
+  `finish_reason` (`"stop"` or `"length"`), `index`, and `message.role`.
+  `usage` additionally carries `total_tokens` and
+  `prompt_tokens_details.cached_tokens`.
+- **Cause**: llama-server's OpenAI-compatible layer supersets the OpenAI
+  schema. `timings` is llama.cpp-specific; `cached_tokens` reflects the
+  prompt-cache reuse also seen in entry 10.
+- **Consequence**: no project bug — 3.1/3.2/3.4/3.5 all read only
+  `choices[0].message.content` and the two `usage` counts, which the thin
+  mocks do supply. But nothing offline pinned the real contract, so a
+  project that later started reading `finish_reason` (to distinguish a
+  truncated completion from a finished one) would pass its mocked tests
+  while reading `None` in production.
+- **Classification**: mock drift, recorded rather than "fixed" — widening
+  every canned body would add noise without changing behaviour. The live
+  test asserts the full envelope once, in 3.4, on behalf of all four.
