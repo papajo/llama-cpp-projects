@@ -1,7 +1,9 @@
 # Real servers vs. the mock — drift report
 
-Produced by a three-worker parallel run (`core`, `rag`, `graph`) against two real
+Produced by a three-worker parallel run (`core`, `rag`, `graph`) against real
 `llama-server` instances, merged from `work-core`, `work-rag` and `work-graph`.
+A third server (the cross-encoder reranker) was added afterwards; all three now
+run as systemd user units and are verified to survive a reboot — see §9.
 
 | | |
 |---|---|
@@ -223,11 +225,58 @@ against the bare default is now **denied**. That is the correct posture —
 required — but any caller relying on `EnterpriseGateway()` with no config will
 see previously-passing requests rejected.
 
-## 9. Reproducing
+## 9. Keeping the servers up
+
+The three servers run as systemd **user** units, installed from
+`deploy/systemd/` (see its README). `start-servers.sh` detects them and
+delegates to `systemctl`, so systemd is the single owner of each port.
+
+| Unit | Port | Flags that matter |
+|---|---|---|
+| `llama-chat.service` | 8090 | `--metrics` |
+| `llama-embed.service` | 8081 | `--embeddings --embd-normalize -1 --metrics` |
+| `llama-rerank.service` | 8082 | `--reranking --pooling rank` |
+
+`Restart=on-failure` covers crashes — verified by `kill -9` on the reranker,
+which came back on its own (`NRestarts=1`). `loginctl enable-linger` is
+required: without it the units start at **login**, not at boot.
+
+### Boot persistence — verified 2026-09-20
+
+A real reboot, not an assumption. The machine came up at 12:50:58 (kernel
+`7.0.0-28` → `7.0.0-31`) and the user systemd instance started all three at
+12:53:25, before any login:
+
+```
+Sep 20 12:53:25 systemd[6182]: Starting llama-rerank.service - llama-server
+                               (cross-encoder reranker, bge-reranker-v2-m3, port 8082)...
+Sep 20 12:53:25 systemd[6182]: Started llama-rerank.service
+```
+
+Post-reboot checks, all green:
+
+| Check | Result |
+|---|---|
+| All three units | `active`, `enabled`, started by systemd |
+| `/metrics` on 8090 | 200 |
+| Embedding L2 norm | 23.498 — raw, so 4.1's ablation keeps its signal |
+| Rerank scores | +9.27 / −11.01 |
+| Open WebUI (8080) | restored on its own (`snap.open-webui.server.service`) |
+| Full suite | 72 runs, 0 failing |
+
+One caveat: the reboot could not be triggered from a non-interactive shell.
+`systemctl reboot` and `sudo -n` both fail with polkit's
+`auth_admin_keep` — it needs a real TTY (`sudo reboot` from a terminal).
+
+## 10. Reproducing
 
 ```bash
-source env.sh                                   # 8090 chat, 8081 embed
+./start-servers.sh --status                     # or --restart / --stop
+source env.sh                                   # 8090 chat, 8081 embed, 8082 rerank
 python scripts/run_all_tests.py --mode offline  # 808 tests, no server needed
 python scripts/run_all_tests.py --mode live     # 290 tests against real servers
 python scripts/run_all_tests.py --mode both
 ```
+
+The live tests skip rather than fail when a server is absent, so the offline
+suite stays runnable on a machine with no llama-server at all.
