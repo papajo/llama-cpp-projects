@@ -24,6 +24,8 @@ import logging
 import os
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Callable
 
@@ -293,13 +295,49 @@ class MCPAdapter(ChatAdapter):
     or to provide model context to the host.
     """
 
+    def slots(self) -> List[Dict[str, Any]]:
+        """Real decode-slot state from llama-server's /slots endpoint.
+
+        This is actual server data, not a model-generated answer. /slots is a
+        llama.cpp-native endpoint: it returns a bare JSON array (no OpenAI-style
+        {"object": "list", "data": [...]} wrapper) and is gated on --slots.
+        Returns [] when the endpoint is unavailable.
+        """
+        if not self._client.connected:
+            return []
+        url = f"{self._client.server.base_url}/slots"
+        try:
+            req = urllib.request.Request(url, method="GET")
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+        except (urllib.error.URLError, OSError, TimeoutError, ValueError):
+            return []
+        return data if isinstance(data, list) else []
+
+    def slots_summary(self) -> str:
+        """One-line summary of real slot state, or why it is unavailable."""
+        slots = self.slots()
+        if not slots:
+            return "unavailable (needs llama-server --slots)"
+        busy = sum(1 for s in slots if s.get("is_processing"))
+        ctx = slots[0].get("n_ctx", "?")
+        return (
+            f"{len(slots)} slots, {busy} processing, {len(slots) - busy} idle "
+            f"(n_ctx {ctx} each)"
+        )
+
     def tool_response(
         self,
         tool_name: str,
         arguments: Dict[str, Any],
         model: Optional[str] = None,
     ) -> str:
-        """Generate a natural-language response for a tool invocation."""
+        """Generate a natural-language response for a tool invocation.
+
+        Note this asks the MODEL to role-play a tool response; it does not
+        invoke a real tool. SmolLM2 reports supports_tools=false, so treat the
+        output as prose, not data. Use slots() for real server state.
+        """
         prompt = (
             f"You are an MCP server. The tool '{tool_name}' was called with:\n"
             f"{json.dumps(arguments, indent=2)}\n\n"
