@@ -8,7 +8,8 @@ Produced by a three-worker parallel run (`core`, `rag`, `graph`) against two rea
 | Build | `b11046-60081bb2b` |
 | Chat | `http://127.0.0.1:8090` — SmolLM2-360M-Instruct Q8_0, `n_ctx` 2048 (`n_ctx_train` 8192), `n_embd` 960, `n_vocab` 49152, 3 slots |
 | Embeddings | `http://127.0.0.1:8081` — nomic-embed-text-v1.5 Q8_0, `n_embd` 768, `n_ctx` 2048, `n_vocab` 30522 |
-| Result | 36 projects · **808 offline tests** · **283 live tests** · 4 xfailed · 0 failing |
+| Reranker | `http://127.0.0.1:8082` — bge-reranker-v2-m3 Q8_0, cross-encoder, `--reranking --pooling rank` |
+| Result | 36 projects · **808 offline tests** · **290 live tests** · 3 xfailed · 0 failing |
 
 Full per-entry detail lives in [`drift-core.md`](drift-core.md),
 [`drift-rag.md`](drift-rag.md) and [`drift-graph.md`](drift-graph.md).
@@ -61,7 +62,7 @@ flag named, never faked into a pass.
 | # | Drift | Endpoint | Missing flag |
 |---|---|---|---|
 | core-2, graph-7 | `/metrics` returns **501** `not_supported_error`; `/props` reports `endpoint_metrics: false` | `GET /metrics` | `--metrics` |
-| rag-5 | Native reranking returns **501** on *both* servers | `POST /rerank`, `/v1/rerank` | `--reranking` (also needs a cross-encoder GGUF; neither model is one) |
+| rag-5 | Native reranking returns **501** on the chat and embeddings servers | `POST /rerank`, `/v1/rerank` | `--reranking` **+ a cross-encoder GGUF**. Now served on a third server (see §1a); the two original servers must stay 501 |
 | — | Embeddings return **501** on the chat server | `POST /v1/embeddings` @8090 | `--embeddings` (only 8081 has it) |
 | core-5 | No speculative-decoding telemetry; draft sampler never engages | `/completion` timings | `--model-draft` |
 | rag-17, rag-19 | No LoRA adapter slots | `GET/POST /lora-adapters` | `--lora` / `--lora-scaled` |
@@ -78,6 +79,30 @@ asserting merely "apply_adapter didn't raise" would pass and look like proof tha
 hot-swapping works. And vision fails with **500 `server_error`**, not the
 **501 `not_supported_error`** that missing embeddings and reranking give
 (rag-16) — so switching on status code misclassifies it.
+
+### 1a. `--reranking` cannot share a server with embeddings
+
+Enabling `--reranking` forces the pooling type from `mean` to `rank`. Verified on
+a scratch port: `/v1/rerank` then works, but `/v1/embeddings` on the same
+process returns **garbage** — denormals and values like `151722240.0`,
+`3.3e-41`. The two capabilities are mutually exclusive in one `llama-server`.
+
+So the cross-encoder runs as a **third server**:
+
+| | |
+|---|---|
+| Port | `127.0.0.1:8082` (`LLM_RERANK_BASE_URL`) |
+| Model | `gpustack/bge-reranker-v2-m3-GGUF:Q8_0` |
+| Flags | `--reranking --pooling rank` |
+
+**`relevance_score` is a raw logit, not 0-1.** Hosted rerank APIs (Cohere,
+Jina) normalise to `[0,1]`; llama.cpp does not. Measured: a matching document
+scores `+7.86`, unrelated ones `-10.91` and `-11.04`. Code assuming a 0-1 range
+silently misreads these. `usage` carries only `prompt_tokens`/`total_tokens` —
+no `completion_tokens`.
+
+Project 4.2 still reranks via chat completions; the native endpoint is now
+covered separately by five live tests that skip when 8082 is not running.
 
 ---
 
@@ -203,6 +228,6 @@ see previously-passing requests rejected.
 ```bash
 source env.sh                                   # 8090 chat, 8081 embed
 python scripts/run_all_tests.py --mode offline  # 808 tests, no server needed
-python scripts/run_all_tests.py --mode live     # 283 tests against real servers
+python scripts/run_all_tests.py --mode live     # 290 tests against real servers
 python scripts/run_all_tests.py --mode both
 ```

@@ -40,3 +40,8 @@ export PYTEST_PLUGINS=_shared.live_fixtures
 # The shared venv lives in the main checkout; worktrees reuse it.
 export LLAMA_VENV=/home/pa-joshi/llama-cpp-projects/.venv
 export PATH=${LLAMA_VENV}/bin:$PATH
+
+# Cross-encoder reranker (own server: --reranking forces pooling=rank, which
+# would corrupt /v1/embeddings if enabled on the embeddings server).
+export LLM_RERANK_BASE_URL=http://127.0.0.1:8082
+export LLM_RERANK_MODEL='gpustack/bge-reranker-v2-m3-GGUF:Q8_0'

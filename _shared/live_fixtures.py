@@ -13,8 +13,9 @@ Live tests are opt-in. They run only when LLM_LIVE=1 is set; otherwise they are
 skipped, keeping the default suite fast and offline.
 
 Endpoints come from env (see env.sh), never hardcoded per project:
-    LLM_CHAT_BASE_URL   default http://127.0.0.1:8090
-    LLM_EMBED_BASE_URL  default http://127.0.0.1:8081
+    LLM_CHAT_BASE_URL    default http://127.0.0.1:8090
+    LLM_EMBED_BASE_URL   default http://127.0.0.1:8081
+    LLM_RERANK_BASE_URL  default http://127.0.0.1:8082 (optional)
 
 Port 8080 is Open WebUI, not llama.cpp. Nothing here may point at it.
 """
@@ -35,6 +36,12 @@ CHAT_MODEL = os.environ.get(
 )
 EMBED_MODEL = os.environ.get(
     "LLM_EMBED_MODEL", "nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0"
+)
+# Cross-encoder reranker. It needs its own server because --reranking forces
+# pooling to "rank", which corrupts /v1/embeddings on the same process.
+RERANK_BASE_URL = os.environ.get("LLM_RERANK_BASE_URL", "http://127.0.0.1:8082")
+RERANK_MODEL = os.environ.get(
+    "LLM_RERANK_MODEL", "gpustack/bge-reranker-v2-m3-GGUF:Q8_0"
 )
 
 _FORBIDDEN_PORT = "8080"
@@ -107,6 +114,18 @@ def embed_base_url() -> str:
 
 
 @pytest.fixture(scope="session")
+def rerank_base_url() -> str:
+    """The cross-encoder rerank server; skips when it is not running."""
+    _require_llamacpp(RERANK_BASE_URL, "rerank")
+    return RERANK_BASE_URL
+
+
+@pytest.fixture(scope="session")
+def rerank_model() -> str:
+    return RERANK_MODEL
+
+
+@pytest.fixture(scope="session")
 def chat_model() -> str:
     return CHAT_MODEL
 
@@ -135,6 +154,22 @@ def live_embed(embed_base_url, embed_model):
     def _call(text, **kw):
         payload = {"model": embed_model, "input": text, **kw}
         return _post(f"{embed_base_url}/v1/embeddings", payload)
+
+    return _call
+
+
+@pytest.fixture
+def live_rerank(rerank_base_url, rerank_model):
+    """Call the real cross-encoder. Returns the raw decoded JSON response.
+
+    Scores are the model's raw logits, NOT normalised to 0-1 the way hosted
+    rerank APIs (Cohere, Jina) return them.
+    """
+
+    def _call(query, documents, **kw):
+        payload = {"model": rerank_model, "query": query,
+                   "documents": list(documents), **kw}
+        return _post(f"{rerank_base_url}/v1/rerank", payload)
 
     return _call
 

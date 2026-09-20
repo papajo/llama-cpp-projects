@@ -8,8 +8,10 @@ chat server.
 Run with:  source env.sh && LLM_LIVE=1 pytest -m live -q
 
 Note on scope: this project's "reranker" is LLM-as-judge over
-/v1/chat/completions. It does NOT use llama.cpp's native /v1/rerank endpoint
-(which this build does not support -- see test_native_rerank_endpoint_*).
+/v1/chat/completions. llama.cpp's native /v1/rerank is covered separately
+against a real cross-encoder (bge-reranker-v2-m3) on its own server -- see
+test_native_rerank_*. It runs separately because --reranking forces pooling to
+"rank", which corrupts /v1/embeddings on the same process.
 
 Every assertion is structural. SmolLM2-360M scores documents poorly and
 inconsistently; ranking *quality* is deliberately not asserted anywhere.
@@ -126,18 +128,20 @@ def test_finish_reason_length_when_truncated(live_chat):
 
 
 # ---------------------------------------------------------------------------
-# Native /v1/rerank is not available in this build
+# Native /v1/rerank against a real cross-encoder
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.live
-def test_native_rerank_endpoint_unsupported(chat_base_url, embed_base_url):
-    """llama.cpp's own reranking endpoint needs --reranking, which is not set.
+def test_native_rerank_absent_from_chat_and_embed_servers(
+    chat_base_url, embed_base_url
+):
+    """/v1/rerank stays 501 on the chat and embeddings servers, by design.
 
-    Unsupported on this CPU-only build, not a code defect: this project scores
-    relevance through chat completions instead and never calls this endpoint.
-    Asserted rather than skipped so the day someone starts llama-server with
-    --reranking, this test fails and tells them a native path is now available.
+    --reranking forces pooling to "rank", which corrupts /v1/embeddings on the
+    same process (verified: vectors come back as denormals and garbage). So the
+    cross-encoder runs on its own server and these two must NOT offer the
+    endpoint. This asserts that separation holds.
     """
     for base in (chat_base_url, embed_base_url):
         req = urllib.request.Request(
@@ -154,6 +158,83 @@ def test_native_rerank_endpoint_unsupported(chat_base_url, embed_base_url):
         err = json.loads(exc.value.read().decode())["error"]
         assert err["type"] == "not_supported_error"
         assert "--reranking" in err["message"]
+
+
+@pytest.mark.live
+def test_native_rerank_response_shape(live_rerank):
+    """The real /v1/rerank envelope, pinned against a cross-encoder."""
+    r = live_rerank("capital of France", ["Paris is the capital of France.",
+                                          "Bananas are rich in potassium."])
+    assert r["object"] == "list"
+    assert {"model", "object", "results", "usage"} <= set(r)
+    assert len(r["results"]) == 2
+    for item in r["results"]:
+        assert set(item) >= {"index", "relevance_score"}
+        assert isinstance(item["index"], int)
+        assert isinstance(item["relevance_score"], float)
+    # One row per input document, indices covering the input positions.
+    assert sorted(item["index"] for item in r["results"]) == [0, 1]
+    # Embedding-style usage: prompt/total only, no completion_tokens.
+    assert set(r["usage"]) == {"prompt_tokens", "total_tokens"}
+
+
+@pytest.mark.live
+def test_native_rerank_scores_are_raw_logits_not_0_to_1(live_rerank):
+    """llama.cpp returns raw cross-encoder logits, unlike hosted rerank APIs.
+
+    Cohere and Jina normalise relevance_score to 0.0-1.0. llama.cpp does not:
+    a strong match scores well above 1 and a poor one goes negative. Any code
+    assuming a 0-1 range silently misreads these.
+    """
+    r = live_rerank(
+        "What is the capital of France?",
+        [
+            "Paris is the capital and largest city of France.",
+            "The Great Barrier Reef is off the coast of Australia.",
+        ],
+    )
+    scores = {item["index"]: item["relevance_score"] for item in r["results"]}
+    assert scores[0] > 1.0, "expected a logit above the 0-1 band for a match"
+    assert scores[1] < 0.0, "expected a negative logit for an unrelated doc"
+
+
+@pytest.mark.live
+def test_native_rerank_discriminates_relevant_from_irrelevant(live_rerank):
+    """The cross-encoder ranks the answer above the distractors.
+
+    Unlike the LLM-as-judge path, a real cross-encoder is strong enough that
+    ranking *quality* can be asserted here - the gap is orders of magnitude,
+    not a coin flip.
+    """
+    docs = [
+        "The Great Barrier Reef is off the coast of Australia.",
+        "Bananas are a good source of potassium.",
+        "Paris is the capital and largest city of France.",
+    ]
+    r = live_rerank("What is the capital of France?", docs)
+    ranked = sorted(r["results"], key=lambda i: -i["relevance_score"])
+    assert ranked[0]["index"] == 2, "the Paris document should rank first"
+    assert ranked[0]["relevance_score"] > ranked[1]["relevance_score"] + 5.0
+
+
+@pytest.mark.live
+def test_native_rerank_preserves_input_order_in_indices(live_rerank):
+    """index refers to the caller's document order, whatever the ranking."""
+    docs = ["Paris is the capital of France.", "Potassium is in bananas.",
+            "Australia has a large reef."]
+    r = live_rerank("France", docs)
+    assert sorted(i["index"] for i in r["results"]) == [0, 1, 2]
+    # The results array is not required to be pre-sorted by score; callers sort.
+    best = max(r["results"], key=lambda i: i["relevance_score"])
+    assert best["index"] == 0
+
+
+@pytest.mark.live
+def test_native_rerank_single_document(live_rerank):
+    """A one-document request still returns a well-formed single row."""
+    r = live_rerank("France", ["Paris is the capital of France."])
+    assert len(r["results"]) == 1
+    assert r["results"][0]["index"] == 0
 
 
 # ---------------------------------------------------------------------------
