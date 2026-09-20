@@ -20,7 +20,7 @@ export LLM_CHAT_MODEL='HuggingFaceTB/SmolLM2-360M-Instruct-GGUF:Q8_0'
 export LLM_EMBED_MODEL='nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0'
 
 export LLM_MODELS_DIR=/home/pa-joshi/Models
-export LD_LIBRARY_PATH=/home/pa-joshi/llama.cpp/build/bin:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/home/pa-joshi/llama.cpp/build/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 
 # Set to 1 to enable the live integration tests (tests/live_*, -m live).
 # Unset means the live layer is skipped and only the offline unit tests run.
