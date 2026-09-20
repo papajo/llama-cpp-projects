@@ -1,0 +1,19 @@
+[Unit]
+Description=llama-server (embeddings, nomic-embed-text-v1.5, port 8081)
+Documentation=file:///home/pa-joshi/llama-cpp-projects/REAL_VS_MOCK.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+Environment=LD_LIBRARY_PATH=/home/pa-joshi/llama.cpp/build/bin
+ExecStart=/home/pa-joshi/llama.cpp/build/bin/llama-server -hf nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0 --host 127.0.0.1 --port 8081 --embeddings --embd-normalize -1 --metrics -c 2048 -t 1
+Restart=on-failure
+RestartSec=5
+# First boot may download the model via -hf; do not give up early.
+TimeoutStartSec=900
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

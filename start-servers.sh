@@ -17,6 +17,10 @@
 # Port 8080 is Open WebUI on this machine, NOT llama.cpp. This script never
 # touches it, and the live fixtures hard-fail on any 8080 URL.
 #
+# If the systemd user units are installed (llama-chat/embed/rerank.service)
+# this script delegates to them, so systemd stays the single owner of each
+# port. Without the units it launches the processes directly.
+#
 # Usage:
 #   ./start-servers.sh            start whatever is not already running
 #   ./start-servers.sh --restart  stop the ones this script manages, then start
@@ -43,6 +47,16 @@ SERVERS=(
 
 is_up() { curl -sf -m 2 "http://${HOST}:$1/health" >/dev/null 2>&1; }
 
+# systemd user units (llama-chat/embed/rerank.service) are the preferred
+# manager when installed: they restart on crash and start at boot. Delegate to
+# them so the two mechanisms never both own a port. Falls back to launching
+# directly when the units are absent.
+unit_for() { echo "llama-$1.service"; }
+has_unit() {
+  command -v systemctl >/dev/null 2>&1 &&
+    systemctl --user cat "$(unit_for "$1")" >/dev/null 2>&1
+}
+
 # Only ever match a llama-server bound to the port we manage, so an unrelated
 # process (Open WebUI, someone's editor) is never signalled.
 pid_on_port() {
@@ -51,6 +65,11 @@ pid_on_port() {
 
 stop_one() {
   local name=$1 port=$2 pid
+  if has_unit "$name"; then
+    systemctl --user stop "$(unit_for "$name")"
+    echo "  ${name} (${port}): stopped via systemd"
+    return 0
+  fi
   pid=$(pid_on_port "$port") || true
   if [ -z "${pid:-}" ]; then
     echo "  ${name} (${port}): not running"
@@ -80,6 +99,19 @@ start_one() {
   pid=$(pid_on_port "$port") || true
   if [ -n "${pid:-}" ]; then
     echo "  ${name} (${port}): port held by pid ${pid} but /health does not answer; refusing to start" >&2
+    return 1
+  fi
+
+  if has_unit "$name"; then
+    systemctl --user start "$(unit_for "$name")"
+    local waited=0
+    while [ "$waited" -lt "$STARTUP_TIMEOUT" ]; do
+      is_up "$port" && { echo "  ${name} (${port}): up via systemd"; return 0; }
+      sleep 2
+      waited=$((waited + 2))
+    done
+    echo "  ${name} (${port}): systemd unit did not become healthy in ${STARTUP_TIMEOUT}s" >&2
+    echo "  journalctl --user -u $(unit_for "$name") -n 20" >&2
     return 1
   fi
 
