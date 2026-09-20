@@ -81,30 +81,38 @@ def test_get_props_returns_generation_settings(probe):
 
 
 @pytest.mark.live
-def test_metrics_endpoint_is_not_compiled_in(probe):
-    """/metrics needs llama-server to be started with --metrics.
+def test_metrics_endpoint_matches_deployment(probe):
+    """/metrics is gated on the --metrics start flag; assert whichever is true.
 
-    Unsupported in this deployment, so assert the honest 501 rather than
-    pretending the Prometheus parser has been exercised.
+    This originally pinned the 501 because the server ran without --metrics.
+    That is a deployment choice, so when the flag is on we exercise the
+    Prometheus parser for real instead, and when it is off we still assert the
+    documented 501.
     """
-    with pytest.raises(httpx.HTTPStatusError) as exc:
-        probe.get_metrics()
-    assert exc.value.response.status_code == 501
-    assert "--metrics" in exc.value.response.text
+    if probe.get_props()["endpoint_metrics"]:
+        metrics = probe.get_metrics()
+        # ServerMetrics.from_prometheus parsed a real exposition payload.
+        assert metrics.kv_cache_usage_ratio >= 0.0
+        assert metrics.tokens_per_second >= 0.0
+    else:
+        with pytest.raises(httpx.HTTPStatusError) as exc:
+            probe.get_metrics()
+        assert exc.value.response.status_code == 501
+        assert "--metrics" in exc.value.response.text
 
 
 @pytest.mark.live
-def test_report_degrades_gracefully_without_metrics(probe):
-    """report() swallows the /metrics 501 and still returns slots+props."""
+def test_report_survives_either_metrics_deployment(probe):
+    """report() returns slots+props whether or not /metrics is enabled."""
     report = probe.report()
     assert report["slots"]
     assert report["server"] == probe.base_url
     # Slot counts come from /slots and must still partition correctly.
     assert report["total_slots"] == len(report["slots"])
     assert report["active_slots"] + report["idle_slots"] == report["total_slots"]
-    # The Prometheus-derived block fell back to the zero-valued default,
-    # because /metrics answered 501.
-    assert report["metrics"]["kv_cache_usage_ratio"] == 0.0
-    assert report["metrics"]["tokens_per_second"] == 0.0
+    # The Prometheus-derived block is present either way: parsed values when
+    # --metrics is on, the zero-valued default when the 501 was swallowed.
+    assert report["metrics"]["kv_cache_usage_ratio"] >= 0.0
+    assert report["metrics"]["tokens_per_second"] >= 0.0
     # /props still succeeded, so it is populated.
     assert report["props"]["total_slots"] == report["total_slots"]

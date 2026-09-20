@@ -46,13 +46,21 @@ psutil = pytest.importorskip("psutil", reason="live collector tests need psutil"
 def _get(url: str, timeout: float = 10.0):
     """GET returning (status, decoded_body). HTTP errors are returned, not raised."""
     req = urllib.request.Request(url, method="GET")
+
+    def _decode(raw: bytes):
+        # /metrics is Prometheus text/plain, not JSON; hand it back as text.
+        try:
+            return json.loads(raw.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return raw.decode(errors="replace")
+
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status, json.loads(resp.read().decode())
+            return resp.status, _decode(resp.read())
     except urllib.error.HTTPError as exc:
         try:
-            return exc.code, json.loads(exc.read().decode())
-        except (json.JSONDecodeError, OSError):
+            return exc.code, _decode(exc.read())
+        except OSError:
             return exc.code, None
 
 
@@ -155,9 +163,18 @@ def test_llamacpp_props_reports_capabilities(chat_base_url):
     assert status == 200
 
     assert props["endpoint_slots"] is True
-    assert props["endpoint_metrics"] is False, "server started without --metrics"
     assert props["total_slots"] == 3
     assert props["build_info"] == "b11046-60081bb2b"
+
+    # endpoint_metrics tracks the --metrics start flag, so it is a deployment
+    # choice rather than a fixed fact. Assert it is declared and that /metrics
+    # actually agrees with the declaration.
+    assert isinstance(props["endpoint_metrics"], bool)
+    status, _ = _get(f"{chat_base_url}/metrics")
+    assert (status == 200) is props["endpoint_metrics"], (
+        f"/props says endpoint_metrics={props['endpoint_metrics']} but "
+        f"/metrics returned {status}"
+    )
 
 
 @pytest.mark.live
@@ -168,30 +185,40 @@ def test_llamacpp_slot_count_matches_props(chat_base_url):
 
 
 @pytest.mark.live
-@pytest.mark.xfail(
-    reason=(
-        "unsupported: llama-server was started without --metrics, so /metrics "
-        "returns 501 not_supported_error and /props reports "
-        "endpoint_metrics=false. Enabling it requires restarting the server "
-        "with --metrics; nothing in this project can work around it."
-    ),
-    strict=True,
-)
-def test_llamacpp_metrics_endpoint(chat_base_url):
-    """Prometheus /metrics is not available on this server.
+def test_llamacpp_metrics_matches_deployment(chat_base_url):
+    """/metrics is gated on the --metrics start flag; assert whichever is true.
 
-    strict=True so this starts failing (XPASS) the moment someone restarts
-    llama-server with --metrics, prompting a real assertion here.
+    Originally this pinned the 501, because the server ran without --metrics.
+    That is a deployment choice, not a property of llama.cpp, so the test now
+    asserts the real Prometheus payload when the flag is on and the documented
+    501 shape when it is off. Both branches are real coverage.
     """
-    status, _ = _get(f"{chat_base_url}/metrics")
-    assert status == 200
+    _, props = _get(f"{chat_base_url}/props")
+    status, body = _get(f"{chat_base_url}/metrics")
+
+    if props["endpoint_metrics"]:
+        assert status == 200
+        # Prometheus exposition is text/plain, not JSON.
+        assert isinstance(body, str)
+        assert "# TYPE" in body
+        assert "llamacpp:" in body
+    else:
+        assert status == 501
+        assert body["error"]["code"] == 501
+        assert body["error"]["type"] == "not_supported_error"
+        assert "--metrics" in body["error"]["message"]
 
 
 @pytest.mark.live
-def test_llamacpp_metrics_really_is_501(chat_base_url):
-    """The positive assertion of the gap above: a 501 with the real error shape."""
-    status, body = _get(f"{chat_base_url}/metrics")
-    assert status == 501
-    assert body["error"]["code"] == 501
-    assert body["error"]["type"] == "not_supported_error"
-    assert "--metrics" in body["error"]["message"]
+def test_llamacpp_metrics_exposes_expected_counters(chat_base_url):
+    """When --metrics is on, the collector's counters really are published."""
+    _, props = _get(f"{chat_base_url}/props")
+    if not props["endpoint_metrics"]:
+        pytest.skip("server started without --metrics")
+
+    _, body = _get(f"{chat_base_url}/metrics")
+    for counter in (
+        "llamacpp:prompt_tokens_total",
+        "llamacpp:tokens_predicted_total",
+    ):
+        assert counter in body, f"{counter} missing from /metrics"

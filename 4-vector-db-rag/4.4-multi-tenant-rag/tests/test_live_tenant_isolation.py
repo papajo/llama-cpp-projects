@@ -100,7 +100,9 @@ def test_real_vectors_are_not_orthogonal(client, embed_model):
     """
     a = client.embed("Acme Corp quarterly revenue report", model=embed_model)
     b = client.embed("Healthplus patient intake policy", model=embed_model)
-    sim = float(np.dot(a, b))  # both unit-norm, so dot == cosine
+    # Do not assume unit-norm: whether the server pre-normalises depends on the
+    # --embd-normalize start flag, so divide by the norms to get a true cosine.
+    sim = float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
     assert sim > 0.05, f"expected a crowded embedding space, got cosine {sim}"
     assert sim < 0.99
 

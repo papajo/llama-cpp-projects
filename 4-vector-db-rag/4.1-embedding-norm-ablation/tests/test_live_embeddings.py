@@ -116,33 +116,64 @@ def test_embed_many_preserves_order_and_count(client):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.live
-def test_server_returns_l2_normalised_vectors(client):
-    """Real /v1/embeddings output is ALREADY unit-norm.
+def _server_normalises(vecs) -> bool:
+    """True when the server already returned unit-norm vectors.
 
-    llama-server normalises embeddings by default (--embd-normalize 2). The
-    mocked tests feed non-unit vectors such as [0.1, 0.2, 0.3], so the offline
-    suite never sees this. Recorded in drift-rag.md: it makes the
-    norm-vs-unnorm ablation degenerate on this server.
+    Depends on the --embd-normalize start flag: the llama-server default is 2
+    (L2), which makes every vector unit-norm and the norm-vs-unnorm ablation
+    degenerate; -1 disables it and the ablation regains signal. Both are valid
+    deployments, so these tests branch instead of pinning one.
+    """
+    return all(abs(float(np.linalg.norm(v)) - 1.0) < 1e-5 for v in vecs)
+
+
+@pytest.mark.live
+def test_server_normalisation_matches_flag(client):
+    """Vectors are either unit-norm (default) or raw (--embd-normalize -1).
+
+    Recorded in drift-rag.md: under the default the ablation is degenerate,
+    because every treatment sees the same unit vectors.
     """
     vecs = client.embed_many(["a short doc", "another short doc"])
-    for v in vecs:
-        assert float(np.linalg.norm(v)) == pytest.approx(1.0, abs=1e-5)
+    norms = [float(np.linalg.norm(v)) for v in vecs]
+    assert all(n > 0 for n in norms), "zero-length embedding from the server"
+
+    if _server_normalises(vecs):
+        for n in norms:
+            assert n == pytest.approx(1.0, abs=1e-5)
+    else:
+        # Raw vectors: nomic-embed norms sit well above 1, so normalising is
+        # a real transformation rather than a no-op.
+        for n in norms:
+            assert n > 1.01, f"expected un-normalised vector, got norm {n}"
 
 
 @pytest.mark.live
-def test_l2_normalize_is_idempotent_on_real_vectors(client):
-    """Normalising an already-normalised real vector changes nothing."""
+def test_l2_normalize_yields_unit_vectors(client):
+    """l2_normalize always produces a unit vector, on raw or pre-normed input."""
     vec = client.embed("hello")
-    assert np.allclose(vec, l2_normalize(vec), atol=1e-6)
+    unit = l2_normalize(vec)
+    assert float(np.linalg.norm(unit)) == pytest.approx(1.0, abs=1e-6)
+    # Idempotent: normalising again changes nothing.
+    assert np.allclose(unit, l2_normalize(unit), atol=1e-6)
 
 
 @pytest.mark.live
 def test_norm_stats_on_real_vectors(client):
-    stats = norm_stats(client.embed_many(["one", "two", "three"]))
+    vecs = client.embed_many(["one", "two", "three"])
+    stats = norm_stats(vecs)
     assert set(stats) == {"mean", "std", "min", "max"}
-    assert stats["mean"] == pytest.approx(1.0, abs=1e-5)
-    assert stats["std"] == pytest.approx(0.0, abs=1e-5)
+    assert stats["min"] > 0
+    assert stats["max"] >= stats["min"]
+
+    if _server_normalises(vecs):
+        assert stats["mean"] == pytest.approx(1.0, abs=1e-5)
+        assert stats["std"] == pytest.approx(0.0, abs=1e-5)
+    else:
+        # Raw norms vary per text, which is exactly the signal the ablation
+        # needs and could not see under the default flag.
+        assert stats["mean"] > 1.01
+        assert stats["std"] > 0.0
 
 
 @pytest.mark.live
@@ -151,8 +182,36 @@ def test_batch_normalize_preserves_direction(client):
     normed = batch_normalize(vecs)
     assert len(normed) == 2
     for raw, unit in zip(vecs, normed):
-        # Already unit-norm, so direction is unchanged.
-        assert float(np.dot(raw, unit)) == pytest.approx(1.0, abs=1e-5)
+        assert float(np.linalg.norm(unit)) == pytest.approx(1.0, abs=1e-6)
+        # Direction preserved: the raw vector projected onto its own unit
+        # vector recovers the raw norm (== 1.0 only when already unit-norm).
+        assert float(np.dot(raw, unit)) == pytest.approx(
+            float(np.linalg.norm(raw)), rel=1e-5
+        )
+
+
+@pytest.mark.live
+def test_ablation_has_signal_when_normalisation_is_disabled(client):
+    """The experiment's premise: norm and unnorm treatments must differ.
+
+    Under the default --embd-normalize 2 this is impossible (drift-rag.md);
+    with -1 the cosine/dot treatments finally diverge, so the ablation
+    measures something. This is the test that the old deployment could not run.
+    """
+    vecs = client.embed_many(["a short doc", "another short doc"])
+    if _server_normalises(vecs):
+        pytest.skip(
+            "server normalises by default (--embd-normalize 2); ablation is "
+            "degenerate here. Restart with --embd-normalize -1 for signal."
+        )
+
+    raw_dot = float(np.dot(vecs[0], vecs[1]))
+    unit = batch_normalize(vecs)
+    cos = float(np.dot(unit[0], unit[1]))
+    assert raw_dot != pytest.approx(cos, abs=1e-3), (
+        "raw dot product and cosine coincide; normalisation changed nothing"
+    )
+    assert -1.0 - 1e-6 <= cos <= 1.0 + 1e-6
 
 
 # ---------------------------------------------------------------------------
