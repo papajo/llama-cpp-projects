@@ -533,13 +533,24 @@ class LLMClient:
         if isinstance(texts, str):
             texts = [texts]
 
-        model = model or self._model or self.server.default_model
+        # A plain llama-server serves ONE model and only offers /v1/embeddings
+        # when started with --embeddings, so chat and embeddings usually live on
+        # different processes. Prefer the dedicated embeddings endpoint when one
+        # is configured; fall back to the detected server otherwise.
+        embed_base = self._embed_base_url()
+        model = (
+            model
+            or os.environ.get("LLM_EMBED_MODEL")
+            or self._model
+            or self.server.default_model
+        )
 
         payload = {"model": model, "input": texts}
         data = self._request(
             method="POST",
             path=self.server.embed_path,
             payload=payload,
+            base_url=embed_base,
         )
 
         # Handle both OpenAI format and ollama format
@@ -549,6 +560,17 @@ class LLMClient:
             return data["embeddings"]
         else:
             raise RuntimeError(f"Unexpected embeddings response: {list(data.keys())}")
+
+    def _embed_base_url(self) -> Optional[str]:
+        """Base URL for embeddings, when it differs from the chat server.
+
+        Returns LLM_EMBED_BASE_URL when set, else None meaning "use the
+        detected server". Importing the _shared package sets that variable to
+        this repo's embeddings port, so it is normally populated; a caller that
+        genuinely wants embeddings from the chat server can unset it.
+        """
+        explicit = os.environ.get("LLM_EMBED_BASE_URL")
+        return explicit.rstrip("/") if explicit else None
 
     def embed_query(self, text: str, model: Optional[str] = None) -> List[float]:
         """Get embedding for a single query string."""
@@ -625,9 +647,14 @@ class LLMClient:
         method: str = "POST",
         path: str = "/v1/chat/completions",
         payload: Optional[dict] = None,
+        base_url: Optional[str] = None,
     ) -> dict:
-        """Make an HTTP request to the server."""
-        url = f"{self.server.base_url}{path}"
+        """Make an HTTP request to the server.
+
+        base_url overrides the detected server, for capabilities that live on
+        a different process (embeddings, reranking).
+        """
+        url = f"{base_url or self.server.base_url}{path}"
         headers = {
             "Content-Type": "application/json",
         }
